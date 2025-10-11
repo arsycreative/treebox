@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseClient";
+import RoomsManager from "@/components/RoomsManager";
+import { Toaster, toast } from "sonner";
 
+/* ============== ICONS (untuk render berdasarkan field icon dari DB) ============== */
 const iconBaseProps = {
   width: 20,
   height: 20,
@@ -14,48 +17,42 @@ const iconBaseProps = {
   strokeLinecap: "round",
   strokeLinejoin: "round",
 };
-
-const IconCube = (props) => (
-  <svg {...iconBaseProps} {...props}>
+const IconCube = (p) => (
+  <svg {...iconBaseProps} {...p}>
     <path d="M12 3 4 7v6l8 4 8-4V7z" />
     <path d="M12 3v14" />
     <path d="M4 7l8 4 8-4" />
   </svg>
 );
-
-const IconGem = (props) => (
-  <svg {...iconBaseProps} {...props}>
+const IconGem = (p) => (
+  <svg {...iconBaseProps} {...p}>
     <path d="M12 3 4 9l8 12 8-12z" />
     <path d="M9 9 12 3l3 6" />
     <path d="M4 9h16" />
   </svg>
 );
-
-const IconDiamond = (props) => (
-  <svg {...iconBaseProps} {...props}>
+const IconDiamond = (p) => (
+  <svg {...iconBaseProps} {...p}>
     <path d="M12 3 20 12l-8 9-8-9z" />
     <path d="M12 3v18" />
     <path d="M6.5 7.5 17.5 16.5" />
     <path d="M17.5 7.5 6.5 16.5" />
   </svg>
 );
-
-const IconLayers = (props) => (
-  <svg {...iconBaseProps} {...props}>
+const IconLayers = (p) => (
+  <svg {...iconBaseProps} {...p}>
     <path d="m12 3 8 4-8 4-8-4Z" />
     <path d="m4 11 8 4 8-4" />
     <path d="m4 15 8 4 8-4" />
   </svg>
 );
-
-const IconStar = (props) => (
-  <svg {...iconBaseProps} {...props}>
+const IconStar = (p) => (
+  <svg {...iconBaseProps} {...p}>
     <path d="m12 4 2.2 4.46 4.92.71-3.56 3.47.84 4.9-4.4-2.32-4.4 2.32.84-4.9-3.56-3.47 4.92-.71z" />
   </svg>
 );
-
-const IconConsole = (props) => (
-  <svg {...iconBaseProps} {...props}>
+const IconConsole = (p) => (
+  <svg {...iconBaseProps} {...p}>
     <rect x="3.5" y="6" width="17" height="12" rx="4" />
     <path d="M8.5 12h3" />
     <path d="M7.5 10v4" />
@@ -63,346 +60,192 @@ const IconConsole = (props) => (
     <circle cx="17.5" cy="13.5" r="1" />
   </svg>
 );
-
-const ROOM_OPTIONS = [
-  "BROWN WALLNUT",
-  "RED RUBY",
-  "BLUE DIAMONT",
-  "GREY SAND",
-  "BLACK GOLD",
-];
-
-const ROOM_SEGMENTS = ["ALL", ...ROOM_OPTIONS];
-
-const DAY_LABELS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
-
-const ROOM_DETAILS = {
-  "BROWN WALLNUT": {
-    short: "BW",
-    Icon: IconCube,
-    accent: "#c27541",
-    badgeBg: "rgba(194, 117, 65, 0.22)",
-    badgeText: "#6a3816",
-    rowBg: "rgba(194, 117, 65, 0.08)",
-    border: "rgba(194, 117, 65, 0.3)",
-  },
-  "RED RUBY": {
-    short: "RR",
-    Icon: IconGem,
-    accent: "#d63b52",
-    badgeBg: "rgba(214, 59, 82, 0.22)",
-    badgeText: "#7f1224",
-    rowBg: "rgba(214, 59, 82, 0.08)",
-    border: "rgba(214, 59, 82, 0.28)",
-  },
-  "BLUE DIAMONT": {
-    short: "BD",
-    Icon: IconDiamond,
-    accent: "#1f7acb",
-    badgeBg: "rgba(31, 122, 203, 0.2)",
-    badgeText: "#0f3c6a",
-    rowBg: "rgba(31, 122, 203, 0.09)",
-    border: "rgba(31, 122, 203, 0.26)",
-  },
-  "GREY SAND": {
-    short: "GS",
-    Icon: IconLayers,
-    accent: "#8f949f",
-    badgeBg: "rgba(143, 148, 159, 0.18)",
-    badgeText: "#464a52",
-    rowBg: "rgba(143, 148, 159, 0.08)",
-    border: "rgba(143, 148, 159, 0.26)",
-  },
-  "BLACK GOLD": {
-    short: "BG",
-    Icon: IconStar,
-    accent: "#c9a63a",
-    badgeBg: "rgba(201, 166, 58, 0.2)",
-    badgeText: "#5a4611",
-    rowBg: "rgba(201, 166, 58, 0.08)",
-    border: "rgba(201, 166, 58, 0.28)",
-  },
+const ICONS = {
+  cube: IconCube,
+  gem: IconGem,
+  diamond: IconDiamond,
+  layers: IconLayers,
+  star: IconStar,
+  console: IconConsole,
 };
 
-const DEFAULT_ROOM_DETAIL = {
-  short: "--",
-  Icon: IconConsole,
+const DEFAULT_DETAIL = {
+  short_code: "--",
+  icon: "console",
   accent: "#15306e",
-  badgeBg: "rgba(21, 48, 110, 0.18)",
-  badgeText: "#112357",
-  rowBg: "rgba(21, 48, 110, 0.06)",
+  badge_bg: "rgba(21, 48, 110, 0.18)",
+  badge_text: "#112357",
+  row_bg: "rgba(21, 48, 110, 0.06)",
   border: "rgba(21, 48, 110, 0.28)",
 };
 
-const getRoomDetail = (room) => ROOM_DETAILS[room] ?? DEFAULT_ROOM_DETAIL;
-
+/* ============== HELPERS ============== */
 const HOURS_IN_MS = 60 * 60 * 1000;
-
-const pad = (value) => String(value).padStart(2, "0");
+const pad = (v) => String(v).padStart(2, "0");
+const WINDOW_SIZE = 30;
 
 const startOfDay = (date = new Date()) => {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  return result;
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 };
+const slotLabel = (startHour, endHour) =>
+  `${pad(startHour)}:00 - ${pad(endHour)}:00`;
 
-const roundUpToHour = (date = new Date()) => {
-  const result = new Date(date);
-  if (
-    result.getMinutes() > 0 ||
-    result.getSeconds() > 0 ||
-    result.getMilliseconds() > 0
-  ) {
-    result.setHours(result.getHours() + 1);
+const buildTimeSlots = (bookings) => {
+  if (!bookings.length) {
+    return Array.from({ length: 18 }, (_, i) => ({
+      startHour: 6 + i,
+      endHour: 7 + i,
+    }));
   }
-  result.setMinutes(0, 0, 0);
-  return result;
+  let minHour = 6,
+    maxHour = 24;
+  bookings.forEach((b) => {
+    const s = new Date(b.waktu_mulai);
+    const e = new Date(b.waktu_selesai);
+    minHour = Math.min(minHour, s.getHours());
+    const endH = e.getMinutes() === 0 ? e.getHours() : e.getHours() + 1;
+    maxHour = Math.max(maxHour, endH);
+  });
+  minHour = Math.max(0, Math.floor(minHour));
+  maxHour = Math.min(24, Math.ceil(maxHour));
+  if (minHour >= maxHour) {
+    minHour = 6;
+    maxHour = 24;
+  }
+  return Array.from({ length: maxHour - minHour }, (_, i) => ({
+    startHour: minHour + i,
+    endHour: minHour + i + 1,
+  }));
 };
 
-const ensureHourString = (value) => {
-  if (!value) return "00:00";
-  const [hourRaw] = value.split(":");
-  const hour = Math.min(23, Math.max(0, Number.parseInt(hourRaw, 10) || 0));
-  return `${pad(hour)}:00`;
+const toDateKey = (iso) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
+const toInputDateString = (date) =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
-const normalizeStartTime = (value) => {
-  const safe = ensureHourString(value);
-  const hour = Math.min(22, Number.parseInt(safe.split(":")[0], 10) || 0);
-  return `${pad(hour)}:00`;
-};
-
-const normalizeEndTime = (startTime, proposedValue) => {
-  const startHour = Number.parseInt(
-    normalizeStartTime(startTime).split(":")[0],
-    10
-  );
-  const safe = ensureHourString(proposedValue);
-  let endHour = Number.parseInt(safe.split(":")[0], 10);
-  if (Number.isNaN(endHour)) endHour = startHour + 1;
-  if (endHour <= startHour) endHour = startHour + 1;
-  if (endHour > 23) endHour = 23;
-  return `${pad(endHour)}:00`;
-};
-
-const nextHourString = (startTime) => {
-  const startHour = Number.parseInt(
-    normalizeStartTime(startTime).split(":")[0],
-    10
-  );
-  return `${pad(Math.min(23, startHour + 1))}:00`;
-};
-
-const combineDateAndTime = (baseDate, timeString) => {
-  const [hourRaw] = ensureHourString(timeString).split(":");
-  const combined = new Date(baseDate);
-  combined.setHours(Number.parseInt(hourRaw, 10), 0, 0, 0);
-  return combined;
-};
-
-const diffHours = (baseDate, startTime, endTime) => {
-  const start = combineDateAndTime(baseDate, startTime);
-  const end = combineDateAndTime(baseDate, endTime);
-  return (end.getTime() - start.getTime()) / HOURS_IN_MS;
-};
-
-const sanitizeQty = (value) => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) return 1;
-  return Math.round(numeric);
-};
-
-const clampQty = (startTime, qty) => {
-  const startHour = Number.parseInt(
-    normalizeStartTime(startTime).split(":")[0],
-    10
-  );
-  const maxDuration = Math.max(1, 23 - startHour);
-  return Math.max(1, Math.min(sanitizeQty(qty), maxDuration));
-};
-
-const deriveEndTimeFromQty = (baseDate, startTime, qty) => {
-  const safeStart = normalizeStartTime(startTime);
-  const safeQty = clampQty(safeStart, qty);
-  const startDate = combineDateAndTime(baseDate, safeStart);
-  const endDate = new Date(startDate.getTime() + safeQty * HOURS_IN_MS);
-  return {
-    qty: safeQty,
-    endTime: ensureHourString(
-      `${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`
-    ),
-  };
-};
-
-const calculateQtyFromTimes = (baseDate, startTime, endTime) => {
-  const diff = diffHours(baseDate, normalizeStartTime(startTime), endTime);
-  if (!Number.isFinite(diff) || diff <= 0) return 1;
-  return sanitizeQty(diff);
-};
-
-const extractTimeFromIso = (isoString) => {
-  const date = new Date(isoString);
-  return ensureHourString(`${pad(date.getHours())}:${pad(date.getMinutes())}`);
-};
-
-const resolveQtyFromBooking = (booking) => {
-  const numeric = Number(booking.qty_jam);
-  if (Number.isFinite(numeric) && numeric > 0) return numeric;
-  const baseDate = startOfDay(new Date(booking.waktu_mulai));
-  const startTime = extractTimeFromIso(booking.waktu_mulai);
-  const endTime = extractTimeFromIso(booking.waktu_selesai);
-  return calculateQtyFromTimes(baseDate, startTime, endTime);
-};
-
-const toDisplayDate = (isoString) =>
-  new Date(isoString).toLocaleString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+const formatTimeOnly = (iso) =>
+  new Date(iso).toLocaleTimeString("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
-const toDateKey = (isoString) => {
-  const date = new Date(isoString);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )}`;
+const resolveQtyFromBooking = (b) => {
+  const n = Number(b.qty_jam);
+  if (Number.isFinite(n) && n > 0) return n;
+  const s = new Date(b.waktu_mulai);
+  const e = new Date(b.waktu_selesai);
+  return Math.round((e - s) / HOURS_IN_MS);
 };
 
-const formatDateOnly = (isoString) =>
-  new Date(isoString).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-
-const formatTimeOnly = (isoString) =>
-  new Date(isoString).toLocaleTimeString("id-ID", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-const fromInputDate = (value) => {
-  if (!value) return null;
-  const [yearStr, monthStr, dayStr] = value.split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const day = Number(dayStr);
-  if (!year || !month || !day) return null;
-  const date = new Date(year, month - 1, day);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
-};
-
-const toInputDateString = (date) => {
-  const y = date.getFullYear();
-  const m = pad(date.getMonth() + 1);
-  const d = pad(date.getDate());
-  return `${y}-${m}-${d}`;
-};
-
-const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
-
-const addMonths = (date, months) =>
-  new Date(date.getFullYear(), date.getMonth() + months, 1);
-
-const getCalendarDays = (monthDate) => {
-  const firstOfMonth = startOfMonth(monthDate);
-  const firstDayIndex = (firstOfMonth.getDay() + 6) % 7; // Monday start
-  const totalCells = 42; // 6 weeks view
-  const days = [];
-  for (let index = 0; index < totalCells; index += 1) {
-    const current = new Date(firstOfMonth);
-    current.setDate(firstOfMonth.getDate() + (index - firstDayIndex));
-    days.push(current);
+const getDatesInRange = (startDate, numDays) => {
+  const res = [];
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    res.push(d);
   }
-  return days;
+  return res;
 };
 
-const defaultFormTimes = () => {
-  const now = new Date();
-  const rounded = roundUpToHour(now);
-  let startHour = rounded.getHours();
-  if (now.getDate() !== rounded.getDate() || startHour > 22) {
-    startHour = 22;
-  }
-  const startTime = `${pad(startHour)}:00`;
-  const { endTime } = deriveEndTimeFromQty(startOfDay(), startTime, 1);
-  return {
-    start: normalizeStartTime(startTime),
-    end: endTime,
-  };
-};
-
-const createEmptyForm = () => {
-  const { start, end } = defaultFormTimes();
-  const qty = calculateQtyFromTimes(startOfDay(), start, end);
-  return {
-    namaKasir: "",
-    namaPelanggan: "",
-    noHp: "",
-    room: ROOM_OPTIONS[0],
-    waktuMulai: start,
-    waktuSelesai: end,
-    qtyJam: String(qty),
-    catatan: "",
-  };
-};
-
-const serializeCsvRow = (cells) =>
-  cells
-    .map((cell) => {
-      if (cell === null || cell === undefined) return "";
-      const value = String(cell);
-      if (value.includes('"') || value.includes(",") || value.includes("\n")) {
-        return `"${value.replace(/"/g, '""')}"`;
-      }
-      return value;
-    })
-    .join(",");
-
-const downloadCsv = (content, filename) => {
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-};
-
+/* ============== PAGE ============== */
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const [sessionReady, setSessionReady] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  // ROOMS dari DB
+  const [rooms, setRooms] = useState([]);
+  const [roomsOpen, setRoomsOpen] = useState(false);
+
+  // Bookings
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
-  const [form, setForm] = useState(createEmptyForm);
-  const [formLoading, setFormLoading] = useState(false);
-  const [feedback, setFeedback] = useState("");
+
+  // Edit / Delete / Quick add + errors
   const [editing, setEditing] = useState(null);
   const [editingLoading, setEditingLoading] = useState(false);
-  const [filters, setFilters] = useState({
-    search: "",
-    room: "ALL",
-    date: "",
-  });
+  const [editingError, setEditingError] = useState("");
 
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [quickAdd, setQuickAdd] = useState(null);
+  const [quickAddForm, setQuickAddForm] = useState({
+    namaKasir: "",
+    namaPelanggan: "",
+    noHp: "",
+    qtyJam: 1,
+  });
+  const [quickAddLoading, setQuickAddLoading] = useState(false);
+  const [quickAddError, setQuickAddError] = useState("");
+
+  // NAV tanggal
+  const [dateWindowStart, setDateWindowStart] = useState(startOfDay());
+  const visibleDates = useMemo(
+    () => getDatesInRange(dateWindowStart, WINDOW_SIZE),
+    [dateWindowStart]
+  );
+  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+  const selectedDate = visibleDates[selectedDateIndex];
+  const selectedDateKey = toInputDateString(selectedDate);
+
+  const shiftWindow = (days) => {
+    setSelectedDateIndex(0);
+    setDateWindowStart((prev) =>
+      startOfDay(
+        new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + days)
+      )
+    );
+  };
+  const goToday = () => {
+    setDateWindowStart(startOfDay());
+    setSelectedDateIndex(0);
+  };
+
+  // User
+  const [cashierName, setCashierName] = useState("");
+
+  // Fetch rooms
+  const fetchRooms = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("*")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    if (error) {
+      toast.error(error.message);
+      setRooms([]);
+    } else {
+      setRooms(data || []);
+    }
+  }, [supabase]);
+
+  // Helpers detail room dari DB
+  const findRoom = (name) => rooms.find((r) => r.name === name);
+  const getDetail = (name) => findRoom(name) || DEFAULT_DETAIL;
+  const getIconComp = (name) => {
+    const r = findRoom(name);
+    const key = r?.icon || "console";
+    return ICONS[key] || IconConsole;
+  };
+
+  const roomNames = useMemo(() => rooms.map((r) => r.name), [rooms]);
+
+  // Fetch bookings
   const fetchBookings = useCallback(async () => {
     setBookingsLoading(true);
     const { data, error } = await supabase
       .from("rental_sesi")
       .select("*")
       .order("waktu_mulai", { ascending: true });
-
     if (error) {
-      setFeedback(error.message);
+      toast.error(error.message);
       setBookings([]);
     } else {
       setBookings(data ?? []);
@@ -411,475 +254,342 @@ export default function DashboardPage() {
   }, [supabase]);
 
   useEffect(() => {
-    const prepare = async () => {
+    const init = async () => {
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         router.replace("/login");
         return;
       }
       setSessionReady(true);
-      fetchBookings();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const fromMeta =
+          user.user_metadata?.display_name ||
+          user.user_metadata?.full_name ||
+          (user.email ? user.email.split("@")[0] : "");
+        setCashierName(fromMeta);
+      }
+      await Promise.all([fetchRooms(), fetchBookings()]);
     };
-
-    prepare();
+    init();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!session) {
-          router.replace("/login");
-        } else {
+      (_e, session) => {
+        if (!session) router.replace("/login");
+        else {
           setSessionReady(true);
+          fetchRooms();
           fetchBookings();
         }
       }
     );
+    return () => listener.subscription.unsubscribe();
+  }, [fetchRooms, fetchBookings, router, supabase]);
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
-  }, [fetchBookings, router, supabase]);
-
-  const filteredByDate = useMemo(() => {
-    const dateFilter = filters.date;
-    if (!dateFilter) return bookings;
-    return bookings.filter(
-      (booking) => toDateKey(booking.waktu_mulai) === dateFilter
-    );
-  }, [bookings, filters.date]);
-
-  const filteredBySearch = useMemo(() => {
-    const searchTerm = filters.search.trim().toLowerCase();
-    if (!searchTerm) return filteredByDate;
-    return filteredByDate.filter((booking) =>
-      [
-        booking.nama_pelanggan,
-        booking.nama_kasir,
-        booking.no_hp,
-        booking.catatan,
-        booking.room,
-      ]
-        .filter(Boolean)
-        .some((text) => text.toLowerCase().includes(searchTerm))
-    );
-  }, [filteredByDate, filters.search]);
-
-  const filteredBookings = useMemo(() => {
-    if (filters.room === "ALL") return filteredBySearch;
-    const roomKey = filters.room.toLowerCase();
-    return filteredBySearch.filter(
-      (booking) => booking.room && booking.room.toLowerCase() === roomKey
-    );
-  }, [filteredBySearch, filters.room]);
-
-  const groupedBookings = useMemo(
-    () =>
-      ROOM_OPTIONS.map((room) => ({
-        room,
-        bookings: filteredBookings.filter((booking) => booking.room === room),
-      })).filter((group) => group.bookings.length > 0),
-    [filteredBookings]
+  const filteredByDate = useMemo(
+    () => bookings.filter((b) => toDateKey(b.waktu_mulai) === selectedDateKey),
+    [bookings, selectedDateKey]
+  );
+  const timeSlots = useMemo(
+    () => buildTimeSlots(filteredByDate),
+    [filteredByDate]
   );
 
-  const roomSummaries = useMemo(() => {
-    const byRoom = ROOM_OPTIONS.map((room) => {
-      const sessions = filteredByDate.filter(
-        (booking) => booking.room === room
-      );
+  // Gabung UI multi-jam (rowspan)
+  const getStartHour = (b) => new Date(b.waktu_mulai).getHours();
+  const getSpanHours = (b) => resolveQtyFromBooking(b);
+
+  const { startsIndex, occupiedIndex } = useMemo(() => {
+    const starts = {};
+    const occ = {};
+    roomNames.forEach((room) => {
+      starts[room] = {};
+      occ[room] = {};
+    });
+    filteredByDate.forEach((b) => {
+      const room = b.room;
+      if (!roomNames.includes(room)) return;
+      const startH = getStartHour(b);
+      const span = Math.max(1, Math.min(24, getSpanHours(b)));
+      starts[room][startH] = { booking: b, span };
+      for (let h = 0; h < span; h++) occ[room][startH + h] = true;
+    });
+    return { startsIndex: starts, occupiedIndex: occ };
+  }, [filteredByDate, roomNames]);
+
+  // Ringkasan
+  const summaryCards = useMemo(() => {
+    const byRoom = roomNames.map((room) => {
+      const sessions = filteredByDate.filter((b) => b.room === room);
       const totalHours = sessions.reduce(
-        (sum, booking) => sum + resolveQtyFromBooking(booking),
+        (sum, b) => sum + resolveQtyFromBooking(b),
         0
       );
       return {
         room,
         count: sessions.length,
         totalHours,
-        detail: getRoomDetail(room),
+        detail: getDetail(room),
       };
     });
-
     const totalCount = filteredByDate.length;
-    const totalHours = byRoom.reduce((sum, item) => sum + item.totalHours, 0);
+    const totalHours = byRoom.reduce((s, i) => s + i.totalHours, 0);
+    return [
+      { room: "ALL", count: totalCount, totalHours, detail: DEFAULT_DETAIL },
+      ...byRoom,
+    ];
+  }, [filteredByDate, roomNames]);
 
-    return {
-      all: {
-        room: "ALL",
-        count: totalCount,
-        totalHours,
-        detail: DEFAULT_ROOM_DETAIL,
-      },
-      rooms: byRoom,
-    };
-  }, [filteredByDate]);
-
-  const summaryCards = useMemo(
-    () => [roomSummaries.all, ...roomSummaries.rooms],
-    [roomSummaries]
-  );
-
+  // Actions
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
       await supabase.auth.signOut();
+      toast.success("Berhasil keluar.");
       router.replace("/login");
-    } catch (error) {
-      setFeedback(error.message ?? "Gagal keluar. Coba lagi.");
+    } catch (e) {
+      toast.error(e.message || "Gagal keluar.");
     } finally {
       setSigningOut(false);
     }
   };
 
-  const handleFormStartChange = (value) => {
-    setForm((prev) => {
-      const safeStart = normalizeStartTime(value);
-      const baseDate = startOfDay();
-      const { qty, endTime } = deriveEndTimeFromQty(
-        baseDate,
-        safeStart,
-        prev.qtyJam
-      );
-      return {
-        ...prev,
-        waktuMulai: safeStart,
-        qtyJam: String(qty),
-        waktuSelesai: endTime,
-      };
-    });
-  };
-
-  const handleFormQtyChange = (value) => {
-    setForm((prev) => {
-      const baseDate = startOfDay();
-      const { qty, endTime } = deriveEndTimeFromQty(
-        baseDate,
-        prev.waktuMulai,
-        value
-      );
-      return {
-        ...prev,
-        qtyJam: String(qty),
-        waktuSelesai: endTime,
-      };
-    });
-  };
-
-  const handleFormEndChange = (value) => {
-    setForm((prev) => {
-      const baseDate = startOfDay();
-      const safeEnd = normalizeEndTime(prev.waktuMulai, value);
-      const qty = calculateQtyFromTimes(baseDate, prev.waktuMulai, safeEnd);
-      return {
-        ...prev,
-        waktuSelesai: safeEnd,
-        qtyJam: String(qty),
-      };
-    });
-  };
-
-  const handleCreate = async (event) => {
-    event.preventDefault();
-    setFormLoading(true);
-    setFeedback("");
-
-    try {
-      if (!form.namaKasir.trim() || !form.namaPelanggan.trim()) {
-        setFeedback("Nama kasir dan nama pelanggan wajib diisi.");
-        setFormLoading(false);
-        return;
-      }
-
-      const baseDate = startOfDay();
-      const safeStart = normalizeStartTime(form.waktuMulai);
-      const safeEnd = normalizeEndTime(safeStart, form.waktuSelesai);
-
-      const startDate = combineDateAndTime(baseDate, safeStart);
-      const endDate = combineDateAndTime(baseDate, safeEnd);
-      if (endDate <= startDate) {
-        setFeedback("Waktu selesai harus lebih besar dari waktu mulai.");
-        setFormLoading(false);
-        return;
-      }
-
-      const qtyNumber = calculateQtyFromTimes(baseDate, safeStart, safeEnd);
-
-      const { data: konflik, error: conflictError } = await supabase
-        .from("rental_sesi")
-        .select("id")
-        .eq("room", form.room)
-        .lt("waktu_mulai", endDate.toISOString())
-        .gt("waktu_selesai", startDate.toISOString());
-
-      if (conflictError) throw conflictError;
-      if (konflik?.length) {
-        setFeedback(
-          "Jadwal tersebut sudah terpakai di ruangan ini. Silakan pilih jam lain atau pindahkan ruangan."
-        );
-        setFormLoading(false);
-        return;
-      }
-
-      const payload = {
-        nama_kasir: form.namaKasir.trim(),
-        nama_pelanggan: form.namaPelanggan.trim(),
-        no_hp: form.noHp.trim(),
-        room: form.room,
-        qty_jam: qtyNumber,
-        catatan: form.catatan.trim() || null,
-        waktu_mulai: startDate.toISOString(),
-        waktu_selesai: endDate.toISOString(),
-      };
-
-      const { error } = await supabase.from("rental_sesi").insert(payload);
-      if (error) throw error;
-
-      setFeedback("Data pelanggan berhasil disimpan.");
-      setForm(createEmptyForm());
-      fetchBookings();
-    } catch (error) {
-      setFeedback(error.message);
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  const startEdit = (booking) => {
-    setFeedback("");
-    const baseDate = startOfDay(new Date(booking.waktu_mulai));
-    const startTime = normalizeStartTime(
-      extractTimeFromIso(booking.waktu_mulai)
-    );
-    const endCandidate = normalizeEndTime(
-      startTime,
-      extractTimeFromIso(booking.waktu_selesai)
-    );
-    const qty = calculateQtyFromTimes(baseDate, startTime, endCandidate);
-    const { endTime } = deriveEndTimeFromQty(baseDate, startTime, qty);
-
+  const startEdit = (b) => {
+    setEditingError("");
     setEditing({
-      id: booking.id,
-      baseDate: baseDate.toISOString(),
-      namaKasir: booking.nama_kasir,
-      namaPelanggan: booking.nama_pelanggan,
-      noHp: booking.no_hp ?? "",
-      room: booking.room,
-      waktuMulai: startTime,
-      waktuSelesai: endTime,
-      qtyJam: String(qty),
-      catatan: booking.catatan ?? "",
+      id: b.id,
+      namaKasir: b.nama_kasir,
+      namaPelanggan: b.nama_pelanggan,
+      noHp: b.no_hp ?? "",
+      room: b.room, // string nama room
+      catatan: b.catatan ?? "",
+      qtyJam: resolveQtyFromBooking(b) || 1,
+      startISO: b.waktu_mulai,
     });
   };
-
   const cancelEdit = () => {
     setEditing(null);
+    setEditingError("");
   };
 
-  const handleEditingStartChange = (value) => {
-    setEditing((prev) => {
-      if (!prev) return prev;
-      const baseDate = new Date(prev.baseDate);
-      const safeStart = normalizeStartTime(value);
-      const { qty, endTime } = deriveEndTimeFromQty(
-        baseDate,
-        safeStart,
-        prev.qtyJam
-      );
-      return {
-        ...prev,
-        waktuMulai: safeStart,
-        waktuSelesai: endTime,
-        qtyJam: String(qty),
-      };
-    });
-  };
-
-  const handleEditingQtyChange = (value) => {
-    setEditing((prev) => {
-      if (!prev) return prev;
-      const baseDate = new Date(prev.baseDate);
-      const { qty, endTime } = deriveEndTimeFromQty(
-        baseDate,
-        prev.waktuMulai,
-        value
-      );
-      return {
-        ...prev,
-        qtyJam: String(qty),
-        waktuSelesai: endTime,
-      };
-    });
-  };
-
-  const handleEditingEndChange = (value) => {
-    setEditing((prev) => {
-      if (!prev) return prev;
-      const baseDate = new Date(prev.baseDate);
-      const safeEnd = normalizeEndTime(prev.waktuMulai, value);
-      const qty = calculateQtyFromTimes(baseDate, prev.waktuMulai, safeEnd);
-      return {
-        ...prev,
-        waktuSelesai: safeEnd,
-        qtyJam: String(qty),
-      };
-    });
-  };
-
-  const handleUpdate = async (event) => {
-    event.preventDefault();
+  const handleUpdate = async (e) => {
+    e.preventDefault();
     if (!editing) return;
     setEditingLoading(true);
-    setFeedback("");
+    setEditingError("");
 
     try {
-      if (!editing.namaKasir.trim() || !editing.namaPelanggan.trim()) {
-        setFeedback("Nama kasir dan nama pelanggan wajib diisi.");
+      if (!cashierName?.trim() || !editing.namaPelanggan.trim()) {
+        setEditingError(
+          "Nama kasir (dari akun) dan nama pelanggan wajib diisi."
+        );
+        setEditingLoading(false);
+        return;
+      }
+      if (!roomNames.includes(editing.room)) {
+        setEditingError(
+          "Room tidak valid. Perbarui daftar rooms terlebih dahulu."
+        );
         setEditingLoading(false);
         return;
       }
 
-      const baseDate = new Date(editing.baseDate);
-      const safeStart = normalizeStartTime(editing.waktuMulai);
-      const safeEnd = normalizeEndTime(safeStart, editing.waktuSelesai);
+      const start = new Date(editing.startISO || new Date());
+      const qty = Math.min(Math.max(editing.qtyJam || 1, 1), 3);
+      const end = new Date(start);
+      end.setHours(start.getHours() + qty);
 
-      const startDate = combineDateAndTime(baseDate, safeStart);
-      const endDate = combineDateAndTime(baseDate, safeEnd);
-
-      if (endDate <= startDate) {
-        setFeedback("Waktu selesai harus lebih besar dari waktu mulai.");
-        setEditingLoading(false);
-        return;
-      }
-
-      const qtyNumber = calculateQtyFromTimes(baseDate, safeStart, safeEnd);
-
+      // Cek tabrakan
       const { data: konflik, error: conflictError } = await supabase
         .from("rental_sesi")
         .select("id")
         .eq("room", editing.room)
-        .lt("waktu_mulai", endDate.toISOString())
-        .gt("waktu_selesai", startDate.toISOString())
-        .neq("id", editing.id);
-
+        .lt("waktu_mulai", end.toISOString())
+        .gt("waktu_selesai", start.toISOString());
       if (conflictError) throw conflictError;
-      if (konflik?.length) {
-        setFeedback(
-          "Jadwal bentrok dengan sesi lain. Sesuaikan jam atau ruangan."
-        );
+      if ((konflik || []).some((k) => k.id !== editing.id)) {
+        setEditingError("Rentang waktu bertabrakan. Ubah durasi/ruangan.");
         setEditingLoading(false);
         return;
       }
 
       const payload = {
-        nama_kasir: editing.namaKasir.trim(),
+        nama_kasir: cashierName?.trim() || "-",
         nama_pelanggan: editing.namaPelanggan.trim(),
-        no_hp: editing.noHp.trim(),
+        no_hp: editing.noHp.trim() || null,
         room: editing.room,
-        qty_jam: qtyNumber,
         catatan: editing.catatan.trim() || null,
-        waktu_mulai: startDate.toISOString(),
-        waktu_selesai: endDate.toISOString(),
+        qty_jam: qty,
+        waktu_mulai: start.toISOString(),
+        waktu_selesai: end.toISOString(),
       };
-
       const { error } = await supabase
         .from("rental_sesi")
         .update(payload)
         .eq("id", editing.id);
-
       if (error) throw error;
 
-      setFeedback("Perubahan berhasil disimpan.");
+      toast.success("Perubahan berhasil disimpan.");
       setEditing(null);
       fetchBookings();
-    } catch (error) {
-      setFeedback(error.message);
+    } catch (err) {
+      setEditingError(err.message);
     } finally {
       setEditingLoading(false);
     }
   };
 
-  const handleDelete = async (bookingId) => {
-    setFeedback("");
-    const { error } = await supabase
-      .from("rental_sesi")
-      .delete()
-      .eq("id", bookingId);
-    if (error) {
-      setFeedback(error.message);
-    } else {
-      setFeedback("Sesi berhasil dihapus.");
-      if (editing?.id === bookingId) {
-        setEditing(null);
-      }
+  const confirmDelete = (b) => setDeleteTarget(b);
+  const handleDelete = async (id) => {
+    setDeleteLoading(true);
+    try {
+      const { error } = await supabase
+        .from("rental_sesi")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+      toast.success("Sesi berhasil dihapus.");
+      if (editing?.id === id) setEditing(null);
       fetchBookings();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDeleteLoading(false);
+      setDeleteTarget(null);
     }
   };
 
-  const handleExportCsv = () => {
-    if (!filteredBookings.length) {
-      setFeedback(
-        "Tidak ada data untuk diekspor. Gunakan filter lain atau tambah data."
-      );
-      return;
+  const handleQuickAdd = async (e) => {
+    e.preventDefault();
+    setQuickAddLoading(true);
+    setQuickAddError("");
+
+    try {
+      if (!cashierName?.trim() || !quickAddForm.namaPelanggan.trim()) {
+        setQuickAddError(
+          "Nama kasir (dari akun) dan nama pelanggan wajib diisi."
+        );
+        setQuickAddLoading(false);
+        return;
+      }
+      if (!roomNames.includes(quickAdd.room)) {
+        setQuickAddError(
+          "Room tidak valid. Perbarui daftar rooms terlebih dahulu."
+        );
+        setQuickAddLoading(false);
+        return;
+      }
+
+      const startDate = new Date(selectedDate);
+      startDate.setHours(quickAdd.startHour, 0, 0, 0);
+      const qty = Math.min(Math.max(quickAddForm.qtyJam || 1, 1), 3);
+      const latestEndHour = Math.min(24, quickAdd.startHour + qty);
+      const endDate = new Date(startDate);
+      endDate.setHours(latestEndHour, 0, 0, 0);
+
+      const { data: konflik, error: conflictError } = await supabase
+        .from("rental_sesi")
+        .select("id")
+        .eq("room", quickAdd.room)
+        .lt("waktu_mulai", endDate.toISOString())
+        .gt("waktu_selesai", startDate.toISOString());
+      if (conflictError) throw conflictError;
+      if (konflik?.length) {
+        setQuickAddError(
+          "Jadwal terpakai. Pilih jam lain atau kurangi durasi."
+        );
+        setQuickAddLoading(false);
+        return;
+      }
+
+      const payload = {
+        nama_kasir: cashierName?.trim() || "-",
+        nama_pelanggan: quickAddForm.namaPelanggan.trim(),
+        no_hp: quickAddForm.noHp.trim() || null,
+        room: quickAdd.room,
+        qty_jam: latestEndHour - quickAdd.startHour,
+        catatan: null,
+        waktu_mulai: startDate.toISOString(),
+        waktu_selesai: endDate.toISOString(),
+      };
+      const { error } = await supabase.from("rental_sesi").insert(payload);
+      if (error) throw error;
+
+      toast.success("Sesi berhasil dibuat!");
+      setQuickAdd(null);
+      setQuickAddForm({
+        namaKasir: "",
+        namaPelanggan: "",
+        noHp: "",
+        qtyJam: 1,
+      });
+      fetchBookings();
+    } catch (err) {
+      setQuickAddError(err.message);
+    } finally {
+      setQuickAddLoading(false);
     }
+  };
 
-    const sortedBookings = filteredBookings.slice().sort((a, b) => {
-      const roomIndexA = ROOM_OPTIONS.indexOf(a.room);
-      const roomIndexB = ROOM_OPTIONS.indexOf(b.room);
-      const normalizedRoomA =
-        roomIndexA === -1 ? Number.MAX_SAFE_INTEGER : roomIndexA;
-      const normalizedRoomB =
-        roomIndexB === -1 ? Number.MAX_SAFE_INTEGER : roomIndexB;
-      if (normalizedRoomA !== normalizedRoomB)
-        return normalizedRoomA - normalizedRoomB;
-      return (
-        new Date(a.waktu_mulai).getTime() - new Date(b.waktu_mulai).getTime()
-      );
-    });
-
-    const headers = [
-      "Tanggal",
-      "Mulai",
-      "Selesai",
-      "Durasi (Jam)",
-      "Ruangan",
-      "Kode Ruangan",
-      "Nama Pelanggan",
-      "Nama Kasir",
-      "No HP",
-      "Catatan",
-      "Dibuat Pada",
+  // Export CSV (No. + format tanggal ramah)
+  const exportCSV = () => {
+    const rows = [
+      [
+        "No.",
+        "Room",
+        "Nama Pelanggan",
+        "Nama Kasir",
+        "No. HP",
+        "Durasi (jam)",
+        "Waktu Mulai",
+        "Waktu Selesai",
+      ],
+      ...filteredByDate.map((b, i) => {
+        const f = (iso) =>
+          new Date(iso).toLocaleString("id-ID", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        return [
+          i + 1,
+          b.room,
+          b.nama_pelanggan,
+          b.nama_kasir,
+          b.no_hp ?? "",
+          resolveQtyFromBooking(b),
+          f(b.waktu_mulai),
+          f(b.waktu_selesai),
+        ];
+      }),
     ];
+    const csv = rows
+      .map((r) =>
+        r
+          .map((cell) => {
+            const s = String(cell ?? "");
+            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          })
+          .join(",")
+      )
+      .join("\n");
 
-    const rows = sortedBookings.map((booking) => {
-      const detail = getRoomDetail(booking.room);
-      const tanggal = formatDateOnly(booking.waktu_mulai);
-      const mulai = formatTimeOnly(booking.waktu_mulai);
-      const selesai = formatTimeOnly(booking.waktu_selesai);
-      const qtyJam = resolveQtyFromBooking(booking);
-      const dibuatPada = booking.created_at
-        ? `${formatDateOnly(booking.created_at)} ${formatTimeOnly(
-            booking.created_at
-          )}`
-        : "";
-
-      return [
-        tanggal,
-        mulai,
-        selesai,
-        qtyJam,
-        booking.room,
-        detail.short,
-        booking.nama_pelanggan,
-        booking.nama_kasir,
-        booking.no_hp ?? "",
-        booking.catatan ? booking.catatan.trim() : "",
-        dibuatPada,
-      ];
-    });
-
-    const csvContent = [headers, ...rows].map(serializeCsvRow).join("\n");
-    const filename = `treebox-rental-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    downloadCsv(csvContent, filename);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const fname = `treebox-sesi_${selectedDateKey}.csv`;
+    a.href = url;
+    a.download = fname;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`CSV diekspor: ${fname}`);
   };
 
   if (!sessionReady) {
@@ -888,14 +598,16 @@ export default function DashboardPage() {
         <div className="rounded-3xl border border-[color:var(--color-border)] bg-white/70 px-8 py-10 text-sm text-[color:var(--color-muted)] shadow-2xl backdrop-blur-lg">
           Memuat data Treebox…
         </div>
+        <Toaster richColors position="top-right" />
       </div>
     );
   }
 
-  let rowCounter = 0;
-
   return (
     <div className="relative flex grow flex-col px-6 pb-16">
+      <Toaster richColors position="top-right" />
+
+      {/* BG blobs */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-6 top-6 h-48 w-48 rounded-full bg-[rgba(21,48,110,0.18)] blur-3xl" />
         <div className="absolute right-2 top-24 h-56 w-56 rounded-full bg-[rgba(230,57,70,0.16)] blur-3xl" />
@@ -911,191 +623,138 @@ export default function DashboardPage() {
             Panel Kasir Treebox
           </h1>
           <p className="mt-2 max-w-xl text-sm text-[color:var(--color-muted)] md:text-base">
-            Catat pelanggan, atur jadwal ruangan, dan pantau sesi rental
-            PlayStation secara real-time.
+            Pantau jadwal ruangan dan sesi rental PlayStation secara real-time.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleSignOut}
-          disabled={signingOut}
-          className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-full bg-white/90 px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg transition focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-70"
-        >
-          <span className="absolute inset-0 bg-[var(--color-accent)] opacity-0 transition group-hover:opacity-100" />
-          <span className="relative flex items-center gap-2 group-hover:text-white">
-            {signingOut ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
-            ) : null}
-            {signingOut ? "Memproses…" : "Keluar"}
-          </span>
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setRoomsOpen(true)}
+            className="inline-flex h-12 items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg"
+          >
+            Kelola Rooms
+          </button>
+
+          <button
+            type="button"
+            onClick={exportCSV}
+            className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-full bg-white/90 px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2"
+          >
+            <span className="relative flex items-center gap-2">Export CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-full bg-white/90 px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-70"
+          >
+            <span className="absolute inset-0 bg-[var(--color-accent)] opacity-0 transition group-hover:opacity-100" />
+            <span className="relative flex items-center gap-2 group-hover:text-white">
+              {signingOut ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+              ) : null}
+              {signingOut ? "Memproses…" : "Keluar"}
+            </span>
+          </button>
+        </div>
       </header>
 
-      <main className="relative z-10 grid gap-8 lg:grid-cols-[420px_1fr]">
+      <main className="relative z-10 flex flex-col gap-8">
         <section className="rounded-3xl border border-[color:var(--color-border)] bg-white/80 p-6 shadow-2xl backdrop-blur">
-          <div className="mb-6">
-            <h2 className="text-2xl font-semibold text-[var(--color-primary)]">
-              Input Pelanggan
-            </h2>
-            <p className="text-sm text-[color:var(--color-muted)]">
-              Lengkapi detail pelanggan Treebox, pilih ruangan, serta tentukan
-              jam mulai dan selesai pada hari ini.
-            </p>
-          </div>
-
-          <form className="space-y-4" onSubmit={handleCreate}>
-            <Field
-              id="namaKasir"
-              label="Nama kasir"
-              value={form.namaKasir}
-              onChange={(value) =>
-                setForm((prev) => ({ ...prev, namaKasir: value }))
-              }
-              required
-              placeholder="Contoh: Rani"
-            />
-            <Field
-              id="namaPelanggan"
-              label="Nama pelanggan"
-              value={form.namaPelanggan}
-              onChange={(value) =>
-                setForm((prev) => ({ ...prev, namaPelanggan: value }))
-              }
-              required
-              placeholder="Contoh: Abi Saputra"
-            />
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Field
-                id="noHp"
-                label="No HP pelanggan"
-                value={form.noHp}
-                onChange={(value) =>
-                  setForm((prev) => ({ ...prev, noHp: value }))
-                }
-                placeholder="08xxxxxxxxxx"
-              />
-              <Field
-                id="qtyJam"
-                label="Qty jam"
-                type="number"
-                min="1"
-                step="1"
-                value={form.qtyJam}
-                onChange={handleFormQtyChange}
-              />
-            </div>
-
-            <RoomSelect
-              value={form.room}
-              onChange={(room) => setForm((prev) => ({ ...prev, room }))}
-            />
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <TimeField
-                id="waktuMulai"
-                label="Waktu mulai"
-                value={form.waktuMulai}
-                onChange={handleFormStartChange}
-                max="22:00"
-                description="Jam menggunakan format 24 jam (WIB)."
-              />
-              <TimeField
-                id="waktuSelesai"
-                label="Waktu selesai"
-                value={form.waktuSelesai}
-                onChange={handleFormEndChange}
-                min={nextHourString(form.waktuMulai)}
-                description="Durasi akan menyesuaikan perbedaan jam."
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label
-                htmlFor="catatan"
-                className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
-              >
-                Catatan
-              </label>
-              <textarea
-                id="catatan"
-                value={form.catatan}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, catatan: event.target.value }))
-                }
-                rows={3}
-                className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-3 text-sm text-[var(--color-primary)] outline-none transition focus:border-[var(--color-primary-light)] focus:ring-2 focus:ring-[rgba(12,29,74,0.16)]"
-                placeholder="Contoh: request joystick tambahan"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={formLoading}
-              className="flex w-full items-center justify-center rounded-full bg-[var(--color-primary)] px-4 py-3 text-sm font-semibold text-white shadow-xl transition hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {formLoading ? "Menyimpan…" : "Simpan data pelanggan"}
-            </button>
-          </form>
-
-          {feedback ? (
-            <div className="mt-6 rounded-2xl border border-[var(--color-border)] bg-white/90 px-5 py-4 text-sm text-[var(--color-primary)] shadow-lg">
-              {feedback}
-            </div>
-          ) : null}
-        </section>
-
-        <section className="rounded-3xl border border-[color:var(--color-border)] bg-white/80 p-6 shadow-2xl backdrop-blur">
-          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-2xl font-semibold text-[var(--color-primary)]">
                 Jadwal Ruangan
               </h2>
               <p className="text-sm text-[color:var(--color-muted)]">
-                Gunakan filter untuk mencari pelanggan, memilih ruangan, atau
-                menampilkan sesi pada hari tertentu.
+                {selectedDate.toLocaleDateString("id-ID", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {/* <button
-                type="button"
-                onClick={fetchBookings}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] px-4 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] transition hover:border-[var(--color-primary-light)] hover:bg-white"
-              >
-                Muat ulang
-              </button> */}
+
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleExportCsv}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] transition hover:border-[var(--color-primary-light)] hover:bg-white/60"
+                onClick={() => shiftWindow(-WINDOW_SIZE)}
+                className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] hover:border-[var(--color-primary-light)]"
               >
-                Ekspor CSV
+                ← {WINDOW_SIZE} hari
+              </button>
+              <button
+                type="button"
+                onClick={goToday}
+                className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] hover:border-[var(--color-primary-light)]"
+              >
+                Hari Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => shiftWindow(WINDOW_SIZE)}
+                className="inline-flex items-center rounded-full border border-[var(--color-border)] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] hover:border-[var(--color-primary-light)]"
+              >
+                {WINDOW_SIZE} hari →
               </button>
             </div>
           </div>
 
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {/* Bar tanggal */}
+          <div className="mb-6">
+            <div className="overflow-x-auto pb-2">
+              <div className="flex gap-2">
+                {visibleDates.map((date, index) => {
+                  const isSelected = index === selectedDateIndex;
+                  const dateStr = toInputDateString(date);
+                  const isToday =
+                    dateStr === toInputDateString(startOfDay(new Date()));
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => setSelectedDateIndex(index)}
+                      className={`flex min-w-[70px] flex-col items-center justify-center gap-1 rounded-2xl border px-3 py-2 transition ${
+                        isSelected
+                          ? "border-transparent bg-[var(--color-primary)] text-white shadow-md"
+                          : "border-[color:var(--color-border)] bg-white text-[var(--color-primary)] hover:border-[var(--color-primary-light)]"
+                      }`}
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.3em]">
+                        {date.toLocaleDateString("id-ID", { weekday: "short" })}
+                      </span>
+                      <span
+                        className={`text-lg font-semibold ${
+                          isToday && !isSelected
+                            ? "text-[var(--color-accent)]"
+                            : ""
+                        }`}
+                      >
+                        {date.getDate()}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Ringkasan */}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {summaryCards.map((card) => {
-              const isActive =
-                filters.room === card.room ||
-                (card.room === "ALL" && filters.room === "ALL");
               const detail =
-                card.room === "ALL"
-                  ? DEFAULT_ROOM_DETAIL
-                  : getRoomDetail(card.room);
-              const accent = detail.accent;
-              const IconComponent = detail.Icon;
+                card.room === "ALL" ? DEFAULT_DETAIL : getDetail(card.room);
+              const IconComponent = ICONS[detail.icon] || IconConsole;
               return (
                 <div
                   key={card.room}
-                  className={`rounded-2xl border px-4 py-4 transition ${
-                    isActive ? "shadow-lg" : "shadow-sm"
-                  }`}
+                  className="rounded-2xl border px-4 py-4 shadow-sm"
                   style={{
-                    borderColor: isActive ? detail.accent : detail.border,
-                    backgroundColor: isActive
-                      ? "rgba(255,255,255,0.96)"
-                      : "rgba(255,255,255,0.88)",
+                    borderColor: detail.border,
+                    backgroundColor: "rgba(255,255,255,0.92)",
                   }}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -1105,7 +764,7 @@ export default function DashboardPage() {
                         style={{
                           backgroundColor: "rgba(255,255,255,0.9)",
                           borderColor: detail.border,
-                          color: accent,
+                          color: detail.accent,
                         }}
                       >
                         <IconComponent width={18} height={18} />
@@ -1116,7 +775,7 @@ export default function DashboardPage() {
                     </div>
                     <span
                       className="text-xs font-semibold uppercase tracking-widest"
-                      style={{ color: accent }}
+                      style={{ color: detail.accent }}
                     >
                       {card.count} sesi
                     </span>
@@ -1124,14 +783,12 @@ export default function DashboardPage() {
                   <div className="mt-3 flex items-baseline gap-2">
                     <span
                       className="text-2xl font-semibold"
-                      style={{
-                        color: isActive ? accent : "var(--color-primary)",
-                      }}
+                      style={{ color: detail.accent }}
                     >
                       {card.totalHours.toLocaleString("id-ID")} jam
                     </span>
                     <span className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
-                      total durasi
+                      total
                     </span>
                   </div>
                 </div>
@@ -1139,373 +796,224 @@ export default function DashboardPage() {
             })}
           </div>
 
-          <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <FilterGroup label="Cari nama pelanggan / kasir / catatan">
-              <input
-                type="search"
-                value={filters.search}
-                onChange={(event) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    search: event.target.value,
-                  }))
-                }
-                placeholder="Ketik kata kunci…"
-                className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-primary)] outline-none transition focus:border-[var(--color-primary-light)] focus:ring-2 focus:ring-[rgba(12,29,74,0.16)]"
-              />
-            </FilterGroup>
-            <FilterGroup label="Tanggal sesi">
-              <DateFilter
-                value={filters.date}
-                onChange={(dateValue) =>
-                  setFilters((prev) => ({ ...prev, date: dateValue }))
-                }
-              />
-            </FilterGroup>
-            <FilterGroup label=" ">
-              <button
-                type="button"
-                onClick={() =>
-                  setFilters({ search: "", room: "ALL", date: "" })
-                }
-                className="rounded-2xl border border-[color:var(--color-border)] px-4 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] transition hover:border-[var(--color-primary-light)] hover:bg-white"
-              >
-                Reset filter
-              </button>
-            </FilterGroup>
-          </div>
-
-          <div className="mb-6">
-            <div className="grid gap-2 rounded-3xl border border-[color:var(--color-border)] bg-white/80 p-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              {ROOM_SEGMENTS.map((segment) => {
-                const isActive = filters.room === segment;
-                const summary =
-                  segment === "ALL"
-                    ? roomSummaries.all
-                    : roomSummaries.rooms.find((item) => item.room === segment);
-                const detail =
-                  segment === "ALL"
-                    ? DEFAULT_ROOM_DETAIL
-                    : getRoomDetail(segment);
-                return (
-                  <button
-                    key={segment}
-                    type="button"
-                    onClick={() =>
-                      setFilters((prev) => ({ ...prev, room: segment }))
-                    }
-                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-2.5 transition focus:outline-none ${
-                      isActive
-                        ? "border-transparent text-white shadow-md"
-                        : "text-[var(--color-primary)]"
-                    }`}
-                    style={{
-                      borderColor: isActive ? "transparent" : detail.border,
-                      backgroundColor: isActive
-                        ? detail.accent
-                        : "rgba(255,255,255,0.92)",
-                    }}
-                  >
-                    <span
-                      className="flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold uppercase"
-                      style={{
-                        backgroundColor: isActive
-                          ? "rgba(255,255,255,0.2)"
-                          : detail.badgeBg,
-                        borderColor: isActive
-                          ? "rgba(255,255,255,0.35)"
-                          : detail.border,
-                        color: isActive ? "#fff" : detail.badgeText,
-                      }}
-                    >
-                      {detail.short}
-                    </span>
-                    <span className="flex flex-col leading-tight">
-                      <span className="text-xs font-semibold uppercase tracking-widest">
-                        {segment === "ALL" ? "Semua ruangan" : segment}
-                      </span>
-                      <span
-                        className={`text-sm font-semibold ${
-                          isActive
-                            ? "text-white"
-                            : "text-[color:var(--color-muted)]"
-                        }`}
-                      >
-                        {(summary?.count ?? 0).toLocaleString("id-ID")} sesi
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+          {/* Jadwal */}
           {bookingsLoading ? (
-            <div className="flex h-[320px] items-center justify-center rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 text-sm text-[color:var(--color-muted)]">
+            <div className="mt-6 flex h-[320px] items-center justify-center rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/70 text-sm text-[color:var(--color-muted)]">
               Mengambil data sesi…
-            </div>
-          ) : filteredBookings.length === 0 ? (
-            <div className="flex h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-[color:var(--color-border)] bg-white/60 text-center text-sm text-[color:var(--color-muted)]">
-              <span>Data tidak ditemukan.</span>
-              <span>Sesuaikan filter atau tambahkan sesi baru.</span>
             </div>
           ) : (
             <>
-              <div className="hidden overflow-x-auto rounded-2xl border border-[color:var(--color-border)] bg-white shadow-inner md:block">
-              <table className="min-w-full divide-y divide-[color:var(--color-border)]">
-                <thead className="bg-[var(--color-primary)] text-left text-xs font-semibold uppercase tracking-widest text-white">
-                  <tr>
-                    <th className="px-4 py-3">No</th>
-                    <th className="px-4 py-3">Pelanggan</th>
-                    <th className="px-4 py-3">Ruangan</th>
-                    <th className="px-4 py-3">Kasir</th>
-                    <th className="px-4 py-3">Mulai</th>
-                    <th className="px-4 py-3">Selesai</th>
-                    <th className="px-4 py-3">Qty</th>
-                    <th className="px-4 py-3">Catatan</th>
-                    <th className="px-4 py-3 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                {groupedBookings.map((group) => {
-                  const detail = getRoomDetail(group.room);
-                  const IconComponent = detail.Icon;
-                  const totalGroupHours = group.bookings.reduce(
-                    (sum, booking) => sum + resolveQtyFromBooking(booking),
-                    0
-                  );
-                  return (
-                    <tbody
-                      key={group.room}
-                      className="text-sm text-[var(--color-primary)]"
-                    >
-                      <tr>
-                        <td
-                          colSpan={9}
-                          className="px-4 py-3"
-                          style={{
-                            backgroundColor: detail.rowBg,
-                            borderLeft: `4px solid ${detail.accent}`,
-                          }}
+              {/* Desktop table dengan rowspan */}
+              <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-[color:var(--color-border)] bg-white shadow-inner md:block">
+                <table className="w-full border-collapse">
+                  <thead className="bg-[var(--color-primary)] text-left text-xs font-semibold uppercase tracking-widest text-white">
+                    <tr>
+                      <th className="border-b border-[color:var(--color-border)] px-4 py-3">
+                        Waktu
+                      </th>
+                      {roomNames.map((room) => (
+                        <th
+                          key={`head-${room}`}
+                          className="border-b border-[color:var(--color-border)] px-4 py-3 text-center"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-3 font-semibold">
-                              <span
-                                className="flex h-9 w-9 items-center justify-center rounded-full border text-sm uppercase"
-                                style={{
-                                  backgroundColor: detail.badgeBg,
-                                  borderColor: detail.border,
-                                  color: detail.badgeText,
-                                }}
+                          {room}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm text-[var(--color-primary)]">
+                    {timeSlots.map((slot) => {
+                      const hour = slot.startHour;
+                      return (
+                        <tr
+                          key={`slot-${hour}`}
+                          className="border-t border-[color:var(--color-border)]"
+                        >
+                          <td className="border-r border-[color:var(--color-border)] px-4 py-3 font-semibold align-top">
+                            {slotLabel(slot.startHour, slot.endHour)}
+                          </td>
+                          {roomNames.map((room) => {
+                            const startInfo = startsIndex[room]?.[hour];
+                            const detail = getDetail(room);
+
+                            if (occupiedIndex[room]?.[hour] && !startInfo)
+                              return null;
+
+                            if (startInfo) {
+                              const b = startInfo.booking;
+                              const span = startInfo.span;
+                              return (
+                                <td
+                                  key={`cell-${hour}-${room}`}
+                                  rowSpan={span}
+                                  className="border-r border-[color:var(--color-border)] px-4 py-3 align-top last:border-r-0"
+                                >
+                                  <div
+                                    className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs shadow-sm"
+                                    style={{
+                                      borderColor: detail.border,
+                                      backgroundColor: detail.row_bg,
+                                    }}
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-semibold truncate text-[var(--color-primary)]">
+                                        {b.nama_pelanggan}
+                                      </p>
+                                      <p className="text-[10px] uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
+                                        {b.nama_kasir} •{" "}
+                                        {resolveQtyFromBooking(b)} jam
+                                      </p>
+                                      <p className="text-[10px] text-[color:var(--color-muted)]">
+                                        {formatTimeOnly(b.waktu_mulai)} -{" "}
+                                        {formatTimeOnly(b.waktu_selesai)}
+                                      </p>
+                                    </div>
+                                    <div className="flex gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => startEdit(b)}
+                                        className="rounded-full border border-[var(--color-primary)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white"
+                                      >
+                                        Ubah
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => confirmDelete(b)}
+                                        className="rounded-full border border-transparent bg-[var(--color-accent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-white hover:bg-[#c82636]"
+                                      >
+                                        Hapus
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              );
+                            }
+
+                            return (
+                              <td
+                                key={`cell-${hour}-${room}`}
+                                className="border-r border-[color:var(--color-border)] px-4 py-3 last:border-r-0"
                               >
-                                {detail.short}
-                              </span>
-                              <span>{group.room}</span>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs uppercase tracking-widest">
-                              <span style={{ color: detail.accent }}>
-                                {group.bookings.length} sesi
-                              </span>
-                              <span className="text-[color:var(--color-muted)]">
-                                {totalGroupHours.toLocaleString("id-ID")} jam
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      {group.bookings.map((booking) => {
-                        const rowNumber = ++rowCounter;
-                        const qty = resolveQtyFromBooking(booking);
-                        const rowBackground = detail.rowBg;
-                        const rowAccent = detail.accent;
-                        const badgeStyles = {
-                          backgroundColor: detail.badgeBg,
-                          color: detail.badgeText,
-                          border: `1px solid ${detail.border}`,
-                        };
-                        const catatanContent = booking.catatan ? (
-                          <p className="max-w-xs text-sm">{booking.catatan}</p>
-                        ) : (
-                          <span className="text-xs text-[color:var(--color-muted)]">
-                            —
-                          </span>
-                        );
-                        return (
-                          <tr
-                            key={booking.id}
-                            className="border-t border-transparent transition hover:bg-white/70"
-                            style={{
-                              backgroundColor: rowBackground,
-                              borderLeft: `4px solid ${rowAccent}`,
-                            }}
-                          >
-                            <td className="px-4 py-3 align-top text-xs font-semibold uppercase tracking-widest text-[color:var(--color-muted)]">
-                              {rowNumber}
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              <p className="font-semibold">
-                                {booking.nama_pelanggan}
-                              </p>
-                              <p className="text-xs text-[color:var(--color-muted)]">
-                                {booking.no_hp
-                                  ? `HP: ${booking.no_hp}`
-                                  : "HP: —"}
-                              </p>
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              <span
-                                className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest"
-                                style={badgeStyles}
-                              >
-                                <IconComponent width={16} height={16} />
-                                {booking.room}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              {booking.nama_kasir}
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              {toDisplayDate(booking.waktu_mulai)}
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              {toDisplayDate(booking.waktu_selesai)}
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)]">
-                                {qty} jam
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                              {catatanContent}
-                            </td>
-                            <td className="px-4 py-3 align-top text-right">
-                              <div className="flex justify-end gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => startEdit(booking)}
-                                  className="inline-flex items-center justify-center rounded-full border border-[var(--color-primary)] px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] transition hover:bg-[var(--color-primary)] hover:text-white"
+                                  onClick={() => {
+                                    setQuickAddError("");
+                                    setQuickAdd({ startHour: hour, room });
+                                  }}
+                                  className="w-full rounded-lg px-2 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-[color:var(--color-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-primary)]"
                                 >
-                                  Ubah
+                                  + Tambah
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(booking.id)}
-                                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-white transition hover:bg-[#c82636]"
-                                >
-                                  Hapus
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  );
-                })}
-              </table>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div className="space-y-4 md:hidden">
-                {groupedBookings.map((group) => {
-                  const detail = getRoomDetail(group.room);
-                  const IconComponent = detail.Icon;
+
+              {/* Mobile */}
+              <div className="mt-6 space-y-4 md:hidden">
+                {timeSlots.map((slot) => {
+                  const hour = slot.startHour;
                   return (
                     <section
-                      key={`mobile-${group.room}`}
+                      key={`mobile-slot-${hour}`}
                       className="rounded-2xl border border-[color:var(--color-border)] bg-white/95 p-4 shadow-md"
                     >
-                      <div className="mb-3 flex items-center justify-between border-b border-[color:var(--color-border)] pb-2">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className="flex h-10 w-10 items-center justify-center rounded-lg border bg-white"
-                            style={{
-                              borderColor: detail.border,
-                              color: detail.accent,
-                            }}
-                          >
-                            <IconComponent width={18} height={18} />
-                          </span>
-                          <div className="flex flex-col">
-                            <span className="text-base font-semibold text-[var(--color-primary)]">
-                              {group.room}
-                            </span>
-                            <span className="text-[11px] uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
-                              {group.bookings.length} sesi ·{" "}
-                              {group.bookings
-                                .reduce((acc, booking) => acc + resolveQtyFromBooking(booking), 0)
-                                .toLocaleString("id-ID")}{" "}
-                              jam
-                            </span>
-                          </div>
-                        </div>
+                      <div className="mb-3 border-b border-[color:var(--color-border)] pb-2">
+                        <h3 className="text-sm font-semibold text-[var(--color-primary)]">
+                          {slotLabel(slot.startHour, slot.endHour)}
+                        </h3>
                       </div>
                       <div className="space-y-3">
-                        {group.bookings.map((booking) => {
-                          const qty = resolveQtyFromBooking(booking);
+                        {roomNames.map((room) => {
+                          const startInfo = startsIndex[room]?.[hour];
+                          const detail = getDetail(room);
+                          const isOccupiedButNotStart =
+                            occupiedIndex[room]?.[hour] && !startInfo;
+
                           return (
-                            <article
-                              key={`mobile-card-${booking.id}`}
-                              className="rounded-xl border border-[color:var(--color-border)] bg-white p-4 shadow-sm transition hover:shadow-md"
+                            <div
+                              key={`mobile-slot-${hour}-${room}`}
+                              className="rounded-xl border px-3 py-3"
+                              style={{ borderColor: detail.border }}
                             >
-                              <div className="mb-3 flex items-start justify-between gap-2">
-                                <div>
-                                  <p className="text-sm font-semibold text-[var(--color-primary)]">
-                                    {booking.nama_pelanggan}
-                                  </p>
-                                  <p className="text-[11px] uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
-                                    {booking.nama_kasir}
-                                  </p>
-                                </div>
-                                <span className="rounded-full bg-[var(--color-accent)]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-[var(--color-accent)]">
-                                  {qty} jam
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--color-primary)]">
+                                  {room}
+                                </span>
+                                <span
+                                  className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] ${
+                                    startInfo || isOccupiedButNotStart
+                                      ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]"
+                                      : "bg-[color:var(--color-muted)]/10 text-[color:var(--color-muted)]"
+                                  }`}
+                                >
+                                  {startInfo || isOccupiedButNotStart
+                                    ? "Terisi"
+                                    : "Kosong"}
                                 </span>
                               </div>
-                              <dl className="grid grid-cols-2 gap-2 text-xs text-[color:var(--color-muted)]">
-                                <div>
-                                  <dt>Mulai</dt>
-                                  <dd className="font-semibold text-[var(--color-primary)]">
-                                    {toDisplayDate(booking.waktu_mulai)}
-                                  </dd>
+
+                              {startInfo ? (
+                                <div className="rounded-lg bg-white px-3 py-2 text-xs shadow-sm">
+                                  <p className="font-semibold text-[var(--color-primary)]">
+                                    {startInfo.booking.nama_pelanggan}
+                                  </p>
+                                  <p className="text-[10px] uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
+                                    {startInfo.booking.nama_kasir} •{" "}
+                                    {startInfo.span} jam
+                                  </p>
+                                  <p className="text-[10px] text-[color:var(--color-muted)]">
+                                    {formatTimeOnly(
+                                      startInfo.booking.waktu_mulai
+                                    )}{" "}
+                                    -{" "}
+                                    {formatTimeOnly(
+                                      startInfo.booking.waktu_selesai
+                                    )}
+                                  </p>
+                                  <div className="mt-2 flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        startEdit(startInfo.booking)
+                                      }
+                                      className="rounded-full border border-[var(--color-primary)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white"
+                                    >
+                                      Ubah
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        confirmDelete(startInfo.booking)
+                                      }
+                                      className="rounded-full border border-transparent bg-[var(--color-accent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-white hover:bg-[#c82636]"
+                                    >
+                                      Hapus
+                                    </button>
+                                  </div>
                                 </div>
-                                <div>
-                                  <dt>Selesai</dt>
-                                  <dd className="font-semibold text-[var(--color-primary)]">
-                                    {toDisplayDate(booking.waktu_selesai)}
-                                  </dd>
+                              ) : isOccupiedButNotStart ? (
+                                <div className="text-[11px] text-[color:var(--color-muted)]">
+                                  Bagian dari sesi sebelumnya.
                                 </div>
-                                <div>
-                                  <dt>No HP</dt>
-                                  <dd className="font-semibold text-[var(--color-primary)]">
-                                    {booking.no_hp ? booking.no_hp : "—"}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt>Ruangan</dt>
-                                  <dd className="font-semibold text-[var(--color-primary)]">
-                                    {booking.room}
-                                  </dd>
-                                </div>
-                              </dl>
-                              {booking.catatan ? (
-                                <p className="mt-2 rounded-lg bg-[var(--color-primary)]/6 px-3 py-2 text-xs text-[var(--color-primary)]">
-                                  {booking.catatan}
-                                </p>
-                              ) : null}
-                              <div className="mt-3 flex justify-end gap-2">
+                              ) : (
                                 <button
                                   type="button"
-                                  onClick={() => startEdit(booking)}
-                                  className="inline-flex items-center justify-center rounded-full border border-[var(--color-primary)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-[var(--color-primary)] transition hover:bg-[var(--color-primary)] hover:text-white"
+                                  onClick={() => {
+                                    setQuickAddError("");
+                                    setQuickAdd({ startHour: hour, room });
+                                  }}
+                                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-[color:var(--color-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-primary)]"
                                 >
-                                  Ubah
+                                  + Tambah sesi
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(booking.id)}
-                                  className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-[#c82636]"
-                                >
-                                  Hapus
-                                </button>
-                              </div>
-                            </article>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -1516,453 +1024,397 @@ export default function DashboardPage() {
             </>
           )}
 
+          {/* EDIT MODAL */}
           {editing ? (
             <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
               <div
                 className="absolute inset-0 bg-black/45 backdrop-blur-sm"
-                aria-hidden="true"
                 onClick={cancelEdit}
               />
               <form
                 onSubmit={handleUpdate}
-                className="relative z-50 w-full max-w-4xl space-y-4 overflow-y-auto rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md md:px-8"
-                onClick={(event) => event.stopPropagation()}
+                className="relative z-50 w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md md:px-8"
+                onClick={(e) => e.stopPropagation()}
               >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
-                    Edit sesi pelanggan
-                  </p>
-                  <h3 className="text-xl font-semibold text-[var(--color-primary)]">
-                    {editing.namaPelanggan}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  className="text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)] transition hover:text-[#a91020]"
-                >
-                  Batal
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-                <Field
-                  id="edit-namaKasir"
-                  label="Nama kasir"
-                  value={editing.namaKasir}
-                  onChange={(value) =>
-                    setEditing((prev) =>
-                      prev ? { ...prev, namaKasir: value } : prev
-                    )
-                  }
-                  required
-                  wrapperClassName="lg:col-span-3"
-                />
-                <Field
-                  id="edit-namaPelanggan"
-                  label="Nama pelanggan"
-                  value={editing.namaPelanggan}
-                  onChange={(value) =>
-                    setEditing((prev) =>
-                      prev ? { ...prev, namaPelanggan: value } : prev
-                    )
-                  }
-                  required
-                  wrapperClassName="lg:col-span-3"
-                />
-                <Field
-                  id="edit-noHp"
-                  label="No HP pelanggan"
-                  value={editing.noHp}
-                  onChange={(value) =>
-                    setEditing((prev) =>
-                      prev ? { ...prev, noHp: value } : prev
-                    )
-                  }
-                  wrapperClassName="lg:col-span-3"
-                  placeholder="08xxxxxxxxxx"
-                />
-                <Field
-                  id="edit-qty"
-                  label="Qty jam"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={editing.qtyJam}
-                  onChange={handleEditingQtyChange}
-                  wrapperClassName="lg:col-span-3"
-                />
-                <RoomSelect
-                  value={editing.room}
-                  onChange={(room) =>
-                    setEditing((prev) => (prev ? { ...prev, room } : prev))
-                  }
-                  wrapperClassName="lg:col-span-4"
-                  label="Bilik / Room"
-                />
-                <TimeField
-                  id="edit-waktuMulai"
-                  label="Waktu mulai"
-                  value={editing.waktuMulai}
-                  onChange={handleEditingStartChange}
-                  max="22:00"
-                  wrapperClassName="lg:col-span-4"
-                  description="Jam 24 jam (WIB)."
-                />
-                <TimeField
-                  id="edit-waktuSelesai"
-                  label="Waktu selesai"
-                  value={editing.waktuSelesai}
-                  onChange={handleEditingEndChange}
-                  min={nextHourString(editing.waktuMulai)}
-                  wrapperClassName="lg:col-span-4"
-                  description="Sesuaikan apabila durasi perlu ditambah."
-                />
-                <div className="flex flex-col gap-2 lg:col-span-12">
-                  <label
-                    htmlFor="edit-catatan"
-                    className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
+                      Edit sesi pelanggan
+                    </p>
+                    <h3 className="text-xl font-semibold text-[var(--color-primary)]">
+                      {editing.namaPelanggan}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)] hover:text-[#a91020]"
                   >
-                    Catatan
-                  </label>
-                  <textarea
-                    id="edit-catatan"
-                    rows={2}
-                    value={editing.catatan}
-                    onChange={(event) =>
+                    Batal
+                  </button>
+                </div>
+
+                {editingError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                    {editingError}
+                  </div>
+                ) : null}
+
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  <FieldRead label="Nama kasir" value={cashierName || "-"} />
+                  <EditField
+                    id="edit-namaPelanggan"
+                    label="Nama pelanggan"
+                    value={editing.namaPelanggan}
+                    onChange={(v) =>
                       setEditing((prev) =>
-                        prev ? { ...prev, catatan: event.target.value } : prev
+                        prev ? { ...prev, namaPelanggan: v } : prev
                       )
                     }
-                    className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm text-[var(--color-primary)] outline-none transition focus:border-[var(--color-primary-light)] focus:ring-2 focus:ring-[rgba(12,29,74,0.16)]"
                   />
+                  <EditField
+                    id="edit-noHp"
+                    label="No HP pelanggan"
+                    value={editing.noHp}
+                    onChange={(v) =>
+                      setEditing((prev) => (prev ? { ...prev, noHp: v } : prev))
+                    }
+                    placeholder="08xxxxxxxxxx"
+                  />
+                  <RoomSelectEdit
+                    value={editing.room}
+                    onChange={(room) =>
+                      setEditing((prev) => (prev ? { ...prev, room } : prev))
+                    }
+                    rooms={rooms}
+                  />
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      Durasi (jam)
+                    </label>
+                    <select
+                      value={editing.qtyJam}
+                      onChange={(e) =>
+                        setEditing((prev) =>
+                          prev
+                            ? { ...prev, qtyJam: Number(e.target.value) }
+                            : prev
+                        )
+                      }
+                      className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+                    >
+                      <option value={1}>1 jam</option>
+                      <option value={2}>2 jam</option>
+                      <option value={3}>3 jam</option>
+                    </select>
+                  </div>
+
+                  <div className="lg:col-span-2 flex flex-col gap-2">
+                    <label
+                      htmlFor="edit-catatan"
+                      className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
+                    >
+                      Catatan
+                    </label>
+                    <textarea
+                      id="edit-catatan"
+                      rows={2}
+                      value={editing.catatan}
+                      onChange={(e) =>
+                        setEditing((prev) =>
+                          prev ? { ...prev, catatan: e.target.value } : prev
+                        )
+                      }
+                      className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm text-[var(--color-primary)] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="submit"
+                    disabled={editingLoading}
+                    className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                  >
+                    {editingLoading ? "Memperbarui…" : "Simpan perubahan"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)]"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : null}
+
+          {/* DELETE MODAL */}
+          {deleteTarget ? (
+            <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+              <div
+                className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                onClick={() => (!deleteLoading ? setDeleteTarget(null) : null)}
+              />
+              <div
+                className="relative z-50 w-full max-w-md space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_18px_45px_rgba(12,29,74,0.18)] backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-[var(--color-primary)]">
+                    Hapus sesi pelanggan?
+                  </h3>
+                  <p className="text-sm text-[color:var(--color-muted)]">
+                    Data pelanggan{" "}
+                    <span className="font-semibold text-[var(--color-primary)]">
+                      {deleteTarget.nama_pelanggan}
+                    </span>{" "}
+                    di ruangan{" "}
+                    <span className="font-semibold text-[var(--color-primary)]">
+                      {deleteTarget.room}
+                    </span>{" "}
+                    akan dihapus permanen.
+                  </p>
+                </div>
+                <dl className="rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                  <div className="flex justify-between">
+                    <dt>Waktu</dt>
+                    <dd className="font-semibold text-[var(--color-primary)]">
+                      {formatTimeOnly(deleteTarget.waktu_mulai)} -{" "}
+                      {formatTimeOnly(deleteTarget.waktu_selesai)}
+                    </dd>
+                  </div>
+                  <div className="mt-2 flex justify-between">
+                    <dt>Kasir</dt>
+                    <dd className="font-semibold text-[var(--color-primary)]">
+                      {deleteTarget.nama_kasir}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="flex flex-wrap justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      !deleteLoading ? setDeleteTarget(null) : null
+                    }
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
+                    disabled={deleteLoading}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(deleteTarget.id)}
+                    className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                    disabled={deleteLoading}
+                  >
+                    {deleteLoading ? "Menghapus…" : "Hapus sesi"}
+                  </button>
                 </div>
               </div>
+            </div>
+          ) : null}
 
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="submit"
-                  disabled={editingLoading}
-                  className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-md transition hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {editingLoading ? "Memperbarui…" : "Simpan perubahan"}
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] transition hover:border-[var(--color-primary-light)] hover:bg-white"
-                >
-                  Batal
-                </button>
-              </div>
-            </form>
-          </div>
+          {/* QUICK ADD MODAL */}
+          {quickAdd ? (
+            <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+              <div
+                className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                onClick={() => (!quickAddLoading ? setQuickAdd(null) : null)}
+              />
+              <form
+                onSubmit={handleQuickAdd}
+                className="relative z-50 w-full max-w-md space-y-4 rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
+                    Tambah sesi cepat
+                  </p>
+                  <h3 className="text-lg font-semibold text-[var(--color-primary)]">
+                    {quickAdd.room} •{" "}
+                    {slotLabel(quickAdd.startHour, quickAdd.startHour + 1)}
+                  </h3>
+                  <p className="text-xs text-[color:var(--color-muted)]">
+                    {selectedDate.toLocaleDateString("id-ID", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}
+                  </p>
+                </div>
+
+                {quickAddError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                    {quickAddError}
+                  </div>
+                ) : null}
+
+                <div className="space-y-3">
+                  <FieldRead label="Nama kasir" value={cashierName || "-"} />
+                  <EditField
+                    id="qa-nama"
+                    label="Nama pelanggan"
+                    value={quickAddForm.namaPelanggan}
+                    onChange={(v) =>
+                      setQuickAddForm((prev) => ({ ...prev, namaPelanggan: v }))
+                    }
+                    placeholder="Contoh: Abi Saputra"
+                  />
+                  <EditField
+                    id="qa-hp"
+                    label="No HP pelanggan"
+                    value={quickAddForm.noHp}
+                    onChange={(v) =>
+                      setQuickAddForm((prev) => ({ ...prev, noHp: v }))
+                    }
+                    placeholder="08xxxxxxxxxx"
+                  />
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      Durasi (jam)
+                    </label>
+                    <select
+                      value={quickAddForm.qtyJam}
+                      onChange={(e) =>
+                        setQuickAddForm((prev) => ({
+                          ...prev,
+                          qtyJam: Number(e.target.value),
+                        }))
+                      }
+                      className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+                    >
+                      <option value={1}>1 jam</option>
+                      <option value={2}>2 jam</option>
+                      <option value={3}>3 jam</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="submit"
+                    disabled={quickAddLoading}
+                    className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                  >
+                    {quickAddLoading ? "Membuat…" : "Buat sesi"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      !quickAddLoading ? setQuickAdd(null) : null
+                    }
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
+            </div>
           ) : null}
         </section>
       </main>
+
+      {/* Modal CRUD Rooms */}
+      <RoomsManager
+        open={roomsOpen}
+        onClose={() => setRoomsOpen(false)}
+        onSaved={() => {
+          fetchRooms(); /* tidak perlu refetch bookings */
+        }}
+      />
     </div>
   );
 }
 
-function Field({
-  id,
-  label,
-  value,
-  onChange,
-  required = false,
-  placeholder,
-  type = "text",
-  wrapperClassName = "",
-  leadingIcon,
-  description,
-  ...rest
-}) {
+/* ============== SMALL COMPONENTS ============== */
+function EditField({ id, label, value, onChange, placeholder, type = "text" }) {
   return (
-    <div className={`flex flex-col gap-2 ${wrapperClassName}`}>
+    <div className="flex flex-col gap-2">
       <label
         htmlFor={id}
         className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
       >
         {label}
       </label>
-      <div className="flex items-center gap-3 rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-3 transition focus-within:border-[var(--color-primary-light)] focus-within:ring-2 focus-within:ring-[rgba(12,29,74,0.16)]">
-        {leadingIcon ? (
-          <span className="text-[color:var(--color-muted)]">{leadingIcon}</span>
-        ) : null}
-        <input
-          id={id}
-          type={type}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          required={required}
-          placeholder={placeholder}
-          className="w-full border-none bg-transparent text-sm font-medium text-[var(--color-primary)] outline-none"
-          {...rest}
-        />
-      </div>
-      {description ? (
-        <p className="pl-1 text-xs text-[color:var(--color-muted)]">{description}</p>
-      ) : null}
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+      />
     </div>
   );
 }
-
-function TimeField({
-  id,
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  wrapperClassName = "",
-  description,
-}) {
-  const minHour = min ? Number.parseInt(min.split(":")[0], 10) : 0;
-  const maxHour = max ? Number.parseInt(max.split(":")[0], 10) : 23;
-  const normalizedMin = Number.isNaN(minHour) ? 0 : Math.max(0, minHour);
-  const normalizedMax = Number.isNaN(maxHour) ? 23 : Math.min(23, maxHour);
-  const hours = [];
-  for (let hour = normalizedMin; hour <= normalizedMax; hour += 1) {
-    hours.push(`${pad(hour)}:00`);
-  }
-  const options = hours.length ? hours : [ensureHourString(value)];
-  const normalizedValue = ensureHourString(value);
-  const safeValue = options.includes(normalizedValue)
-    ? normalizedValue
-    : options[0];
-
+function FieldRead({ label, value }) {
   return (
-    <div className={`flex flex-col gap-2 ${wrapperClassName}`}>
-      <label
-        htmlFor={id}
-        className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
-      >
+    <div className="flex flex-col gap-2">
+      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
         {label}
       </label>
-      <div className="flex items-center gap-3 rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-3 transition focus-within:border-[var(--color-primary-light)] focus-within:ring-2 focus-within:ring-[rgba(12,29,74,0.16)]">
-        <span className="text-lg text-[color:var(--color-muted)]">🕒</span>
-        <select
-          id={id}
-          value={safeValue}
-          onChange={(event) => onChange(ensureHourString(event.target.value))}
-          className="w-full border-none bg-transparent text-sm font-medium text-[var(--color-primary)] outline-none"
-        >
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </div>
-      {description ? (
-        <p className="pl-1 text-xs text-[color:var(--color-muted)]">{description}</p>
-      ) : null}
+      <input
+        type="text"
+        value={value}
+        readOnly
+        disabled
+        className="rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-muted)]/10 px-4 py-2.5 text-sm font-medium text-[color:var(--color-muted)] cursor-not-allowed select-none opacity-70"
+      />
     </div>
   );
 }
 
-function FilterGroup({ label, children }) {
-  const hasLabel = label && label.trim().length > 0;
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="h-[1.25rem] text-[10px] font-semibold uppercase tracking-[0.35em] text-[color:var(--color-muted)]">
-        {hasLabel ? label : ""}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function DateFilter({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const selectedDate = useMemo(() => fromInputDate(value), [value]);
-  const [viewDate, setViewDate] = useState(() => selectedDate ?? new Date());
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    if (selectedDate) {
-      setViewDate(selectedDate);
-    }
-  }, [selectedDate]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const handleClick = (event) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-    };
-  }, [open]);
-
-  const days = useMemo(() => getCalendarDays(viewDate), [viewDate]);
-  const monthLabel = viewDate.toLocaleDateString("id-ID", {
-    month: "long",
-    year: "numeric",
-  });
-  const selectedKey = selectedDate ? toInputDateString(selectedDate) : "";
-  const todayKey = toInputDateString(new Date());
-
-  const handleSelect = (date) => {
-    onChange(toInputDateString(date));
-    setOpen(false);
-  };
-
-  const clearDate = () => {
-    onChange("");
-    setOpen(false);
-  };
-
-  return (
-    <div className="relative" ref={containerRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-left text-sm text-[var(--color-primary)] outline-none transition focus:border-[var(--color-primary-light)] focus:ring-2 focus:ring-[rgba(12,29,74,0.16)]"
-      >
-        <span>
-          {selectedDate
-            ? selectedDate.toLocaleDateString("id-ID", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })
-            : "Semua tanggal"}
-        </span>
-        <span className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
-          {open ? "Tutup" : "Pilih"}
-        </span>
-      </button>
-
-      {open ? (
-        <div className="absolute z-20 mt-2 w-full min-w-[260px] max-w-[280px] rounded-3xl border border-[color:var(--color-border)] bg-white/95 p-4 shadow-2xl backdrop-blur">
-          <div className="mb-3 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setViewDate((prev) => addMonths(prev, -1))}
-              className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--color-muted)] transition hover:border-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              &lt;
-            </button>
-            <div className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--color-primary)]">
-              {monthLabel}
-            </div>
-            <button
-              type="button"
-              onClick={() => setViewDate((prev) => addMonths(prev, 1))}
-              className="rounded-full border border-[color:var(--color-border)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--color-muted)] transition hover:border-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
-            >
-              &gt;
-            </button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
-            {DAY_LABELS.map((label) => (
-              <span key={label}>{label}</span>
-            ))}
-          </div>
-          <div className="mt-2 grid grid-cols-7 gap-1 text-sm">
-            {days.map((date) => {
-              const key = toInputDateString(date);
-              const isSameMonth = date.getMonth() === viewDate.getMonth();
-              const isSelected = key === selectedKey;
-              const isToday = key === todayKey;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleSelect(date)}
-                  className={`flex h-9 w-full items-center justify-center rounded-full border text-sm font-medium transition ${
-                    isSelected
-                      ? "border-transparent bg-[var(--color-primary)] text-white shadow-md"
-                      : isToday
-                      ? "border-[var(--color-primary)] text-[var(--color-primary)]"
-                      : "border-transparent text-[var(--color-primary)] hover:border-[var(--color-primary-light)] hover:bg-[var(--color-primary)]/8"
-                  } ${isSameMonth ? "" : "opacity-50"}`}
-                >
-                  {date.getDate()}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex justify-between text-xs">
-            <button
-              type="button"
-              onClick={() => {
-                const today = new Date();
-                onChange(toInputDateString(today));
-                setViewDate(today);
-                setOpen(false);
-              }}
-              className="rounded-full border border-[color:var(--color-border)] px-3 py-1 font-semibold uppercase tracking-[0.3em] text-[var(--color-primary)] transition hover:border-[var(--color-primary-light)] hover:bg-white"
-            >
-              Hari ini
-            </button>
-            <button
-              type="button"
-              onClick={clearDate}
-              className="rounded-full border border-transparent bg-[var(--color-accent)] px-3 py-1 font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-[#c82636]"
-            >
-              Kosongkan
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function RoomSelect({ value, onChange, wrapperClassName = "", label = "Bilik / Room" }) {
+function RoomSelectEdit({ value, onChange, rooms }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
-  const selectedDetail = getRoomDetail(value);
+  const selected = rooms.find((r) => r.name === value);
+  const detail = selected || DEFAULT_DETAIL;
+  const Icon = ICONS[detail.icon] || IconConsole;
 
   useEffect(() => {
-    if (!open) return undefined;
-    const handleClick = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
+    if (!open) return;
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target))
         setOpen(false);
-      }
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
   return (
-    <div className={`relative flex flex-col gap-2 ${wrapperClassName}`} ref={containerRef}>
+    <div className="relative flex flex-col gap-2" ref={containerRef}>
       <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-        {label}
+        Bilik / Room
       </span>
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center justify-between gap-6 rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-3 text-left transition focus:outline-none focus:border-[var(--color-primary-light)] focus:ring-2 focus:ring-[rgba(12,29,74,0.16)]"
+        onClick={() => setOpen((p) => !p)}
+        className="flex items-center justify-between gap-6 rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-left"
       >
         <div className="flex items-center gap-3">
           <span
-            className="flex h-10 w-10 items-center justify-center rounded-xl border"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border"
             style={{
-              backgroundColor: selectedDetail.badgeBg,
-              borderColor: selectedDetail.border,
-              color: selectedDetail.accent,
+              backgroundColor: detail.badge_bg,
+              borderColor: detail.border,
+              color: detail.accent,
             }}
           >
-            <selectedDetail.Icon width={18} height={18} />
+            <Icon width={16} height={16} />
           </span>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-[var(--color-primary)]">{value}</span>
+            <span className="text-sm font-semibold text-[var(--color-primary)]">
+              {value}
+            </span>
             <span
-              className="text-[11px] uppercase tracking-widest"
-              style={{ color: selectedDetail.accent }}
+              className="text-[10px] uppercase tracking-widest"
+              style={{ color: detail.accent }}
             >
-              Kode {selectedDetail.short}
+              Kode {detail.short_code || "--"}
             </span>
           </div>
         </div>
@@ -1970,21 +1422,22 @@ function RoomSelect({ value, onChange, wrapperClassName = "", label = "Bilik / R
           {open ? "Tutup" : "Pilih"}
         </span>
       </button>
+
       {open ? (
         <div className="absolute z-30 mt-2 w-full min-w-[240px] rounded-3xl border border-[color:var(--color-border)] bg-white/95 p-3 shadow-2xl backdrop-blur">
-          <div className="space-y-2">
-            {ROOM_OPTIONS.map((room) => {
-              const detail = getRoomDetail(room);
-              const isActive = room === value;
+          <div className="space-y-2 max-h-80 overflow-auto">
+            {rooms.map((r) => {
+              const Ico = ICONS[r.icon] || IconConsole;
+              const isActive = r.name === value;
               return (
                 <button
                   type="button"
-                  key={room}
+                  key={r.id}
                   onClick={() => {
-                    onChange(room);
+                    onChange(r.name);
                     setOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-left transition ${
                     isActive
                       ? "border-transparent bg-[var(--color-primary)] text-white shadow-md"
                       : "border-[color:var(--color-border)] hover:border-[var(--color-primary-light)] hover:bg-[var(--color-primary)]/6"
@@ -1992,23 +1445,20 @@ function RoomSelect({ value, onChange, wrapperClassName = "", label = "Bilik / R
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className="flex h-9 w-9 items-center justify-center rounded-xl border bg-white"
-                      style={{
-                        borderColor: detail.border,
-                        color: detail.accent,
-                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border bg-white"
+                      style={{ borderColor: r.border, color: r.accent }}
                     >
-                      <detail.Icon width={16} height={16} />
+                      <Ico width={14} height={14} />
                     </span>
                     <div className="flex flex-col">
-                      <span className="text-sm font-semibold">{room}</span>
-                      <span className="text-[11px] uppercase tracking-widest">
-                        Kode {detail.short}
+                      <span className="text-sm font-semibold">{r.name}</span>
+                      <span className="text-[10px] uppercase tracking-widest">
+                        Kode {r.short_code}
                       </span>
                     </div>
                   </div>
                   <span className="text-xs font-semibold uppercase tracking-[0.3em]">
-                    {isActive ? "Dipilih" : detail.short}
+                    {isActive ? "Dipilih" : r.short_code}
                   </span>
                 </button>
               );
