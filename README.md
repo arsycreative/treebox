@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+## Treebox Admin – Panduan Setup
 
-## Getting Started
+Aplikasi ini adalah sistem admin Treebox untuk menginput data pelanggan rental PlayStation. Teknologi inti: Next.js (App Router), Tailwind, dan Supabase (auth + database).
 
-First, run the development server:
+### 1. Prasyarat
+
+- Node.js 18+
+- Akun Supabase
+- NPM (atau pnpm/bun/yarn)
+
+### 2. Instalasi Dependensi
+
+```bash
+npm install
+```
+
+### 3. Konfigurasi Supabase
+
+1. Buat project baru di [Supabase](https://supabase.com/).
+2. Catat `Project URL` dan `anon public key` dari menu Project Settings → API.
+3. Jalankan SQL berikut di Supabase SQL Editor untuk membuat schema dan aturan:
+
+   ```sql
+   create extension if not exists "btree_gist";
+
+   create table if not exists public.rental_sesi (
+     id uuid primary key default gen_random_uuid(),
+     created_at timestamptz not null default now(),
+     nama_kasir text not null,
+     nama_pelanggan text not null,
+     no_hp text,
+     room text not null,
+     qty_jam integer not null check (qty_jam > 0),
+     catatan text,
+     waktu_mulai timestamptz not null,
+     waktu_selesai timestamptz not null,
+     constraint room_waktu_unique exclude using gist (
+       room with =,
+       tstzrange(waktu_mulai, waktu_selesai) with &&
+     )
+   );
+
+   alter table public.rental_sesi enable row level security;
+
+   create policy "Hanya admin boleh mengelola data"
+     on public.rental_sesi
+     for all
+     using (auth.role() = 'authenticated')
+     with check (auth.role() = 'authenticated');
+   ```
+
+   Constraint `room_waktu_unique` mencegah jadwal bentrok di ruangan yang sama.
+
+4. Buat pengguna Supabase Auth (menu Authentication) untuk akun admin.
+
+### 4. Variabel Lingkungan
+
+Buat file `.env.local` di root project:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=isi_dengan_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=isi_dengan_anon_key
+```
+
+> **Catatan:** Karena aplikasi hanya dipakai admin, cukup gunakan anon key + RLS yang membatasi akses pada user login.
+
+### 5. Menjalankan Aplikasi
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Akses `http://localhost:3000`. Anda akan melihat halaman login admin (bahasa Indonesia).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+### 6. Fitur Utama
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Login admin Supabase
+- Form input pelanggan dengan field:
+  - Nama kasir, nama pelanggan, nomor HP, ruangan, waktu mulai, qty jam (otomatis hitung waktu selesai), catatan
+- Validasi jadwal agar tidak dobel di ruangan sama
+- Daftar sesi aktif dengan opsi edit/hapus
+- Ubah ruangan dan qty jam secara langsung, termasuk perpindahan ruangan
 
-## Learn More
+### 7. Build & Deploy
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+npm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deploy ke platform favorit (misal Vercel). Pastikan variabel lingkungan diset di platform deployment.
