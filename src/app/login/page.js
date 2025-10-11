@@ -5,10 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseClient";
 
-const initialForm = {
-  email: "",
-  password: "",
-};
+const initialForm = { email: "", password: "" };
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,22 +14,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Cek sesi sekali saat mount
   useEffect(() => {
-    const resolveSession = async () => {
+    let mounted = true;
+    (async () => {
       const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
       if (data.session) router.replace("/dashboard");
-    };
-
-    resolveSession();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session) router.replace("/dashboard");
-      }
-    );
-
+    })();
     return () => {
-      listener.subscription.unsubscribe();
+      mounted = false;
     };
   }, [router, supabase]);
 
@@ -41,23 +32,62 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: form.email.trim(),
-      password: form.password,
-    });
-
-    if (authError) {
-      setError(
-        authError.message === "Invalid login credentials"
-          ? "Email atau kata sandi salah."
-          : authError.message
+    try {
+      // 1) Login
+      const { data, error: authError } = await supabase.auth.signInWithPassword(
+        {
+          email: form.email.trim(),
+          password: form.password,
+        }
       );
-      setLoading(false);
-      return;
-    }
+      if (authError) {
+        setError(
+          authError.message === "Invalid login credentials"
+            ? "Email atau kata sandi salah."
+            : authError.message
+        );
+        setLoading(false);
+        return;
+      }
 
-    setLoading(false);
-    router.replace("/dashboard");
+      const user = data?.user;
+      if (!user) throw new Error("Gagal mengambil user setelah login.");
+
+      // 2) Validasi row admins via RLS
+      const { data: adminRow, error: adminErr } = await supabase
+        .from("admins")
+        .select("role,is_active")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (adminErr) throw adminErr;
+      if (!adminRow) {
+        await supabase.auth.signOut();
+        setError("Akun tidak terdaftar sebagai admin Treebox.");
+        setLoading(false);
+        return;
+      }
+      if (!adminRow.is_active) {
+        await supabase.auth.signOut();
+        setError("Akun admin non-aktif. Hubungi super admin.");
+        setLoading(false);
+        return;
+      }
+
+      // 3) Sinkron role ke app_metadata (non-blocking)
+      fetch("/api/admins/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      }).catch(() => {});
+
+      // 4) Lanjut ke dashboard (tanpa refreshSession; hemat round-trip)
+      router.replace("/dashboard");
+    } catch (e) {
+      setError(e.message || "Terjadi kesalahan saat login.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -134,8 +164,8 @@ export default function LoginPage() {
               autoComplete="email"
               required
               value={form.email}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, email: event.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, email: e.target.value }))
               }
               className="w-full rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-sm text-white outline-none transition focus:border-white focus:bg-white/15"
               placeholder="admin@treebox.id"
@@ -155,8 +185,8 @@ export default function LoginPage() {
               autoComplete="current-password"
               required
               value={form.password}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, password: event.target.value }))
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, password: e.target.value }))
               }
               className="w-full rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-sm text-white outline-none transition focus:border-white focus:bg-white/15"
               placeholder="••••••••"

@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseClient";
 import RoomsManager from "@/components/RoomsManager";
 import { Toaster, toast } from "sonner";
+import AdminsManager from "@/components/AdminsManager";
 
-/* ============== ICONS (untuk render berdasarkan field icon dari DB) ============== */
+const MAX_BOOKING_HOURS = 6;
+
+/* ====== ICONS ====== */
 const iconBaseProps = {
   width: 20,
   height: 20,
@@ -79,7 +82,7 @@ const DEFAULT_DETAIL = {
   border: "rgba(21, 48, 110, 0.28)",
 };
 
-/* ============== HELPERS ============== */
+/* ====== HELPERS ====== */
 const HOURS_IN_MS = 60 * 60 * 1000;
 const pad = (v) => String(v).padStart(2, "0");
 const WINDOW_SIZE = 30;
@@ -126,7 +129,6 @@ const toDateKey = (iso) => {
 };
 const toInputDateString = (date) =>
   `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-
 const formatTimeOnly = (iso) =>
   new Date(iso).toLocaleTimeString("id-ID", {
     hour: "2-digit",
@@ -151,15 +153,15 @@ const getDatesInRange = (startDate, numDays) => {
   return res;
 };
 
-/* ============== PAGE ============== */
+/* ====== PAGE ====== */
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const [sessionReady, setSessionReady] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
+  const didInitFetch = useRef(false);
 
-  // ROOMS dari DB
+  // ROOMS
   const [rooms, setRooms] = useState([]);
   const [roomsOpen, setRoomsOpen] = useState(false);
 
@@ -195,6 +197,23 @@ export default function DashboardPage() {
   const selectedDate = visibleDates[selectedDateIndex];
   const selectedDateKey = toInputDateString(selectedDate);
 
+  // User & profile
+  const [me, setMe] = useState({
+    role: "crew",
+    is_active: true,
+    display_name: "",
+  });
+  const [openAdmins, setOpenAdmins] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Nama kasir fallback (metadata/email)
+  const [metaName, setMetaName] = useState("");
+  const cashierDisplayName = useMemo(() => {
+    const m = (me?.display_name || "").trim();
+    if (m) return m;
+    return (metaName || "").trim();
+  }, [me?.display_name, metaName]);
+
   const shiftWindow = (days) => {
     setSelectedDateIndex(0);
     setDateWindowStart((prev) =>
@@ -207,9 +226,6 @@ export default function DashboardPage() {
     setDateWindowStart(startOfDay());
     setSelectedDateIndex(0);
   };
-
-  // User
-  const [cashierName, setCashierName] = useState("");
 
   // Fetch rooms
   const fetchRooms = useCallback(async () => {
@@ -226,18 +242,7 @@ export default function DashboardPage() {
     }
   }, [supabase]);
 
-  // Helpers detail room dari DB
-  const findRoom = (name) => rooms.find((r) => r.name === name);
-  const getDetail = (name) => findRoom(name) || DEFAULT_DETAIL;
-  const getIconComp = (name) => {
-    const r = findRoom(name);
-    const key = r?.icon || "console";
-    return ICONS[key] || IconConsole;
-  };
-
-  const roomNames = useMemo(() => rooms.map((r) => r.name), [rooms]);
-
-  // Fetch bookings
+  // Fetch bookings (ambil semua; filter di memori)
   const fetchBookings = useCallback(async () => {
     setBookingsLoading(true);
     const { data, error } = await supabase
@@ -253,40 +258,74 @@ export default function DashboardPage() {
     setBookingsLoading(false);
   }, [supabase]);
 
+  // Init sekali
   useEffect(() => {
-    const init = async () => {
+    let mounted = true;
+    (async () => {
       const { data } = await supabase.auth.getSession();
-      if (!data.session) {
+      if (!mounted) return;
+
+      const session = data.session;
+      if (!session) {
         router.replace("/login");
         return;
       }
-      setSessionReady(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const fromMeta =
-          user.user_metadata?.display_name ||
-          user.user_metadata?.full_name ||
-          (user.email ? user.email.split("@")[0] : "");
-        setCashierName(fromMeta);
-      }
-      await Promise.all([fetchRooms(), fetchBookings()]);
-    };
-    init();
 
+      const user = session.user;
+      const fromMeta =
+        user?.user_metadata?.display_name ||
+        user?.user_metadata?.full_name ||
+        (user?.email ? user.email.split("@")[0] : "");
+      setMetaName(fromMeta);
+
+      const { data: adminData, error: adminErr } = await supabase
+        .from("admins")
+        .select("role,is_active,display_name,email")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (adminErr || !adminData) {
+        router.replace("/login");
+        return;
+      }
+      if (!adminData.is_active) {
+        router.replace("/login");
+        return;
+      }
+
+      setMe(adminData);
+      setSessionReady(true);
+
+      if (!didInitFetch.current) {
+        didInitFetch.current = true;
+        await Promise.all([fetchRooms(), fetchBookings()]);
+      }
+    })();
+
+    // Listener minimal (hindari refetch ganda)
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_e, session) => {
-        if (!session) router.replace("/login");
-        else {
+      (event, session) => {
+        if (event === "SIGNED_OUT") {
+          router.replace("/login");
+        } else if (event === "SIGNED_IN" && session?.user) {
           setSessionReady(true);
+          // ambil ulang data penting
           fetchRooms();
           fetchBookings();
         }
       }
     );
-    return () => listener.subscription.unsubscribe();
-  }, [fetchRooms, fetchBookings, router, supabase]);
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [fetchBookings, fetchRooms, router, supabase]);
+
+  // Helpers detail room
+  const findRoom = (name) => rooms.find((r) => r.name === name);
+  const getDetail = (name) => findRoom(name) || DEFAULT_DETAIL;
+  const roomNames = useMemo(() => rooms.map((r) => r.name), [rooms]);
 
   const filteredByDate = useMemo(
     () => bookings.filter((b) => toDateKey(b.waktu_mulai) === selectedDateKey),
@@ -347,7 +386,6 @@ export default function DashboardPage() {
     setSigningOut(true);
     try {
       await supabase.auth.signOut();
-      toast.success("Berhasil keluar.");
       router.replace("/login");
     } catch (e) {
       toast.error(e.message || "Gagal keluar.");
@@ -363,7 +401,7 @@ export default function DashboardPage() {
       namaKasir: b.nama_kasir,
       namaPelanggan: b.nama_pelanggan,
       noHp: b.no_hp ?? "",
-      room: b.room, // string nama room
+      room: b.room,
       catatan: b.catatan ?? "",
       qtyJam: resolveQtyFromBooking(b) || 1,
       startISO: b.waktu_mulai,
@@ -381,7 +419,7 @@ export default function DashboardPage() {
     setEditingError("");
 
     try {
-      if (!cashierName?.trim() || !editing.namaPelanggan.trim()) {
+      if (!cashierDisplayName?.trim() || !editing.namaPelanggan.trim()) {
         setEditingError(
           "Nama kasir (dari akun) dan nama pelanggan wajib diisi."
         );
@@ -397,7 +435,7 @@ export default function DashboardPage() {
       }
 
       const start = new Date(editing.startISO || new Date());
-      const qty = Math.min(Math.max(editing.qtyJam || 1, 1), 3);
+      const qty = Math.min(Math.max(editing.qtyJam || 1, 1), MAX_BOOKING_HOURS);
       const end = new Date(start);
       end.setHours(start.getHours() + qty);
 
@@ -416,7 +454,7 @@ export default function DashboardPage() {
       }
 
       const payload = {
-        nama_kasir: cashierName?.trim() || "-",
+        nama_kasir: cashierDisplayName?.trim() || "-",
         nama_pelanggan: editing.namaPelanggan.trim(),
         no_hp: editing.noHp.trim() || null,
         room: editing.room,
@@ -467,7 +505,7 @@ export default function DashboardPage() {
     setQuickAddError("");
 
     try {
-      if (!cashierName?.trim() || !quickAddForm.namaPelanggan.trim()) {
+      if (!cashierDisplayName?.trim() || !quickAddForm.namaPelanggan.trim()) {
         setQuickAddError(
           "Nama kasir (dari akun) dan nama pelanggan wajib diisi."
         );
@@ -484,7 +522,10 @@ export default function DashboardPage() {
 
       const startDate = new Date(selectedDate);
       startDate.setHours(quickAdd.startHour, 0, 0, 0);
-      const qty = Math.min(Math.max(quickAddForm.qtyJam || 1, 1), 3);
+      const qty = Math.min(
+        Math.max(quickAddForm.qtyJam || 1, 1),
+        MAX_BOOKING_HOURS
+      );
       const latestEndHour = Math.min(24, quickAdd.startHour + qty);
       const endDate = new Date(startDate);
       endDate.setHours(latestEndHour, 0, 0, 0);
@@ -505,7 +546,7 @@ export default function DashboardPage() {
       }
 
       const payload = {
-        nama_kasir: cashierName?.trim() || "-",
+        nama_kasir: cashierDisplayName?.trim() || "-",
         nama_pelanggan: quickAddForm.namaPelanggan.trim(),
         no_hp: quickAddForm.noHp.trim() || null,
         room: quickAdd.room,
@@ -533,7 +574,7 @@ export default function DashboardPage() {
     }
   };
 
-  // Export CSV (No. + format tanggal ramah)
+  // Export CSV
   const exportCSV = () => {
     const rows = [
       [
@@ -628,13 +669,25 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setRoomsOpen(true)}
-            className="inline-flex h-12 items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg"
-          >
-            Kelola Rooms
-          </button>
+          {me.role === "super" ? (
+            <button
+              type="button"
+              onClick={() => setOpenAdmins(true)}
+              className="group relative inline-flex h-12 items-center justify-center overflow-hidden rounded-full bg-white/90 px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg transition focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2"
+            >
+              Kelola Admin
+            </button>
+          ) : null}
+
+          {me.role === "super" ? (
+            <button
+              type="button"
+              onClick={() => setRoomsOpen(true)}
+              className="inline-flex h-12 items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-6 text-sm font-semibold text-[var(--color-primary)] shadow-lg"
+            >
+              Kelola Rooms
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -662,7 +715,7 @@ export default function DashboardPage() {
       </header>
 
       <main className="relative z-10 flex flex-col gap-8">
-        <section className="rounded-3xl border border-[color:var(--color-border)] bg-white/80 p-6 shadow-2xl backdrop-blur">
+        <section className="rounded-3xl border border-[var(--color-border)] bg-white/80 p-6 shadow-2xl backdrop-blur">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-2xl font-semibold text-[var(--color-primary)]">
@@ -803,7 +856,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
-              {/* Desktop table dengan rowspan */}
+              {/* Desktop table */}
               <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-[color:var(--color-border)] bg-white shadow-inner md:block">
                 <table className="w-full border-collapse">
                   <thead className="bg-[var(--color-primary)] text-left text-xs font-semibold uppercase tracking-widest text-white">
@@ -1061,7 +1114,10 @@ export default function DashboardPage() {
                 ) : null}
 
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  <FieldRead label="Nama kasir" value={cashierName || "-"} />
+                  <FieldRead
+                    label="Nama kasir"
+                    value={cashierDisplayName || "-"}
+                  />
                   <EditField
                     id="edit-namaPelanggan"
                     label="Nama pelanggan"
@@ -1104,9 +1160,14 @@ export default function DashboardPage() {
                       }
                       className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
                     >
-                      <option value={1}>1 jam</option>
-                      <option value={2}>2 jam</option>
-                      <option value={3}>3 jam</option>
+                      {Array.from(
+                        { length: MAX_BOOKING_HOURS },
+                        (_, i) => i + 1
+                      ).map((h) => (
+                        <option key={h} value={h}>
+                          {h} jam
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -1253,7 +1314,10 @@ export default function DashboardPage() {
                 ) : null}
 
                 <div className="space-y-3">
-                  <FieldRead label="Nama kasir" value={cashierName || "-"} />
+                  <FieldRead
+                    label="Nama kasir"
+                    value={cashierDisplayName || "-"}
+                  />
                   <EditField
                     id="qa-nama"
                     label="Nama pelanggan"
@@ -1287,9 +1351,14 @@ export default function DashboardPage() {
                       }
                       className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
                     >
-                      <option value={1}>1 jam</option>
-                      <option value={2}>2 jam</option>
-                      <option value={3}>3 jam</option>
+                      {Array.from(
+                        { length: MAX_BOOKING_HOURS },
+                        (_, i) => i + 1
+                      ).map((h) => (
+                        <option key={h} value={h}>
+                          {h} jam
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -1318,19 +1387,19 @@ export default function DashboardPage() {
         </section>
       </main>
 
-      {/* Modal CRUD Rooms */}
+      <AdminsManager open={openAdmins} onClose={() => setOpenAdmins(false)} />
       <RoomsManager
         open={roomsOpen}
         onClose={() => setRoomsOpen(false)}
         onSaved={() => {
-          fetchRooms(); /* tidak perlu refetch bookings */
+          fetchRooms();
         }}
       />
     </div>
   );
 }
 
-/* ============== SMALL COMPONENTS ============== */
+/* ====== SMALL COMPONENTS ====== */
 function EditField({ id, label, value, onChange, placeholder, type = "text" }) {
   return (
     <div className="flex flex-col gap-2">
@@ -1371,9 +1440,8 @@ function FieldRead({ label, value }) {
 function RoomSelectEdit({ value, onChange, rooms }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
-  const selected = rooms.find((r) => r.name === value);
-  const detail = selected || DEFAULT_DETAIL;
-  const Icon = ICONS[detail.icon] || IconConsole;
+  const selected = rooms.find((r) => r.name === value) || DEFAULT_DETAIL;
+  const Icon = ICONS[selected.icon] || IconConsole;
 
   useEffect(() => {
     if (!open) return;
@@ -1399,9 +1467,9 @@ function RoomSelectEdit({ value, onChange, rooms }) {
           <span
             className="flex h-9 w-9 items-center justify-center rounded-xl border"
             style={{
-              backgroundColor: detail.badge_bg,
-              borderColor: detail.border,
-              color: detail.accent,
+              backgroundColor: selected.badge_bg,
+              borderColor: selected.border,
+              color: selected.accent,
             }}
           >
             <Icon width={16} height={16} />
@@ -1412,9 +1480,9 @@ function RoomSelectEdit({ value, onChange, rooms }) {
             </span>
             <span
               className="text-[10px] uppercase tracking-widest"
-              style={{ color: detail.accent }}
+              style={{ color: selected.accent }}
             >
-              Kode {detail.short_code || "--"}
+              Kode {selected.short_code || "--"}
             </span>
           </div>
         </div>
