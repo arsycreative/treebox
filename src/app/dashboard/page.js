@@ -6,8 +6,49 @@ import { createSupabaseBrowserClient } from "@/lib/supabaseClient";
 import RoomsManager from "@/components/RoomsManager";
 import { Toaster, toast } from "sonner";
 import AdminsManager from "@/components/AdminsManager";
+import { createPortal } from "react-dom";
 
 const MAX_BOOKING_HOURS = 6;
+
+/* ================= Scroll lock (freeze page when modal open) ================= */
+function useScrollLock(isOpen) {
+  const restoreRef = useRef({ top: 0, hadInline: false });
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const body = document.body;
+    const html = document.documentElement;
+
+    // Save current scroll and inline styles to restore later
+    restoreRef.current.top = window.scrollY || window.pageYOffset || 0;
+    restoreRef.current.hadInline = !!body.getAttribute("style");
+
+    // Lock (iOS-friendly)
+    body.style.position = "fixed";
+    body.style.top = `-${restoreRef.current.top}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+
+    // Prevent overscroll on html too
+    html.style.overscrollBehavior = "contain";
+
+    return () => {
+      // Unlock and restore scroll
+      body.style.position = "";
+      body.style.top = "";
+      body.style.left = "";
+      body.style.right = "";
+      body.style.width = "";
+      body.style.overflow = "";
+      html.style.overscrollBehavior = "";
+
+      window.scrollTo(0, restoreRef.current.top || 0);
+    };
+  }, [isOpen]);
+}
 
 /* ====== ICONS ====== */
 const iconBaseProps = {
@@ -92,37 +133,6 @@ const startOfDay = (date = new Date()) => {
   d.setHours(0, 0, 0, 0);
   return d;
 };
-const slotLabel = (startHour, endHour) =>
-  `${pad(startHour)}:00 - ${pad(endHour)}:00`;
-
-const buildTimeSlots = (bookings) => {
-  if (!bookings.length) {
-    return Array.from({ length: 18 }, (_, i) => ({
-      startHour: 6 + i,
-      endHour: 7 + i,
-    }));
-  }
-  let minHour = 6,
-    maxHour = 24;
-  bookings.forEach((b) => {
-    const s = new Date(b.waktu_mulai);
-    const e = new Date(b.waktu_selesai);
-    minHour = Math.min(minHour, s.getHours());
-    const endH = e.getMinutes() === 0 ? e.getHours() : e.getHours() + 1;
-    maxHour = Math.max(maxHour, endH);
-  });
-  minHour = Math.max(0, Math.floor(minHour));
-  maxHour = Math.min(24, Math.ceil(maxHour));
-  if (minHour >= maxHour) {
-    minHour = 6;
-    maxHour = 24;
-  }
-  return Array.from({ length: maxHour - minHour }, (_, i) => ({
-    startHour: minHour + i,
-    endHour: minHour + i + 1,
-  }));
-};
-
 const toDateKey = (iso) => {
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -134,7 +144,6 @@ const formatTimeOnly = (iso) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-
 const resolveQtyFromBooking = (b) => {
   const n = Number(b.qty_jam);
   if (Number.isFinite(n) && n > 0) return n;
@@ -142,7 +151,6 @@ const resolveQtyFromBooking = (b) => {
   const e = new Date(b.waktu_selesai);
   return Math.round((e - s) / HOURS_IN_MS);
 };
-
 const getDatesInRange = (startDate, numDays) => {
   const res = [];
   for (let i = 0; i < numDays; i++) {
@@ -151,6 +159,27 @@ const getDatesInRange = (startDate, numDays) => {
     res.push(d);
   }
   return res;
+};
+
+/* ====== Jam bisnis: 06:00 real s/d 04:00 real keesokan hari (label geser) ====== */
+const BUSINESS_START_HOUR = 6; // 06:00 real
+const BUSINESS_END_HOUR = 4; // 04:00 real
+const buildBusinessTimeSlots = () => {
+  const slots = [];
+  let h = BUSINESS_START_HOUR;
+  while (true) {
+    const next = (h + 1) % 24;
+    slots.push({ startHour: h, endHour: next }); // jam real
+    if (next === BUSINESS_END_HOUR) break;
+    h = next;
+  }
+  return slots;
+};
+const businessSlotLabel = (startHour, endHour) => {
+  const shift = (hour) => (hour - BUSINESS_START_HOUR + 24) % 24;
+  const sh = shift(startHour);
+  const eh = shift(endHour);
+  return `${pad(sh)}:00 - ${pad(eh)}:00`;
 };
 
 /* ====== PAGE ====== */
@@ -213,6 +242,48 @@ export default function DashboardPage() {
     if (m) return m;
     return (metaName || "").trim();
   }, [me?.display_name, metaName]);
+  const shiftHour = (h) => (h - BUSINESS_START_HOUR + 24) % 24;
+
+  function ModalPortal({ children }) {
+    if (typeof window === "undefined") return null;
+    return createPortal(children, document.body);
+  }
+
+  const toBusinessDate = (dateLike) => {
+    const real = new Date(dateLike);
+    const biz = new Date(real);
+    // Jika jam real < 06:00, secara "bisnis" itu milik H-1
+    if (real.getHours() < BUSINESS_START_HOUR) {
+      biz.setDate(biz.getDate() - 1);
+    }
+    biz.setHours(0, 0, 0, 0);
+    return biz;
+  };
+
+  const formatBusinessDateTime = (iso) => {
+    const real = new Date(iso);
+    const bizDate = toBusinessDate(real);
+    const bizHour = shiftHour(real.getHours());
+    const out = new Date(bizDate);
+    out.setHours(bizHour, real.getMinutes(), 0, 0);
+    return out.toLocaleString("id-ID", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // Lock page scroll whenever ANY modal is open (local modals + external modals)
+  const anyModalOpen = !!(
+    editing ||
+    deleteTarget ||
+    quickAdd ||
+    roomsOpen ||
+    openAdmins
+  );
+  useScrollLock(anyModalOpen);
 
   const shiftWindow = (days) => {
     setSelectedDateIndex(0);
@@ -309,7 +380,6 @@ export default function DashboardPage() {
           router.replace("/login");
         } else if (event === "SIGNED_IN" && session?.user) {
           setSessionReady(true);
-          // ambil ulang data penting
           fetchRooms();
           fetchBookings();
         }
@@ -331,12 +401,11 @@ export default function DashboardPage() {
     () => bookings.filter((b) => toDateKey(b.waktu_mulai) === selectedDateKey),
     [bookings, selectedDateKey]
   );
-  const timeSlots = useMemo(
-    () => buildTimeSlots(filteredByDate),
-    [filteredByDate]
-  );
 
-  // Gabung UI multi-jam (rowspan)
+  // Time slots (06:00 real → 04:00 real) with shifted labels
+  const timeSlots = useMemo(() => buildBusinessTimeSlots(), []);
+
+  // Rowspan helpers
   const getStartHour = (b) => new Date(b.waktu_mulai).getHours();
   const getSpanHours = (b) => resolveQtyFromBooking(b);
 
@@ -347,14 +416,16 @@ export default function DashboardPage() {
       starts[room] = {};
       occ[room] = {};
     });
+
     filteredByDate.forEach((b) => {
       const room = b.room;
       if (!roomNames.includes(room)) return;
       const startH = getStartHour(b);
       const span = Math.max(1, Math.min(24, getSpanHours(b)));
       starts[room][startH] = { booking: b, span };
-      for (let h = 0; h < span; h++) occ[room][startH + h] = true;
+      for (let h = 0; h < span; h++) occ[room][(startH + h) % 24] = true;
     });
+
     return { startsIndex: starts, occupiedIndex: occ };
   }, [filteredByDate, roomNames]);
 
@@ -521,6 +592,7 @@ export default function DashboardPage() {
       }
 
       const startDate = new Date(selectedDate);
+      // startHour di slot tetap jam real
       startDate.setHours(quickAdd.startHour, 0, 0, 0);
       const qty = Math.min(
         Math.max(quickAddForm.qtyJam || 1, 1),
@@ -586,9 +658,12 @@ export default function DashboardPage() {
         "Durasi (jam)",
         "Waktu Mulai",
         "Waktu Selesai",
+        // "Waktu Mulai (Kalender)",
+        // "Waktu Selesai (Kalender)",
+        "Catatan",
       ],
       ...filteredByDate.map((b, i) => {
-        const f = (iso) =>
+        const fReal = (iso) =>
           new Date(iso).toLocaleString("id-ID", {
             day: "2-digit",
             month: "short",
@@ -596,6 +671,7 @@ export default function DashboardPage() {
             hour: "2-digit",
             minute: "2-digit",
           });
+
         return [
           i + 1,
           b.room,
@@ -603,11 +679,17 @@ export default function DashboardPage() {
           b.nama_kasir,
           b.no_hp ?? "",
           resolveQtyFromBooking(b),
-          f(b.waktu_mulai),
-          f(b.waktu_selesai),
+          // Bisnis (mengikuti label 00:00-04:00 setelah geser dari jam real)
+          formatBusinessDateTime(b.waktu_mulai),
+          formatBusinessDateTime(b.waktu_selesai),
+          // Kalender (jam real di DB)
+          // fReal(b.waktu_mulai),
+          // fReal(b.waktu_selesai),
+          b.catatan ?? "",
         ];
       }),
     ];
+
     const csv = rows
       .map((r) =>
         r
@@ -857,7 +939,7 @@ export default function DashboardPage() {
           ) : (
             <>
               {/* Desktop table */}
-              <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-[color:var(--color-border)] bg-white shadow-inner md:block">
+              <div className="mt-6 hidden overflow-x-auto rounded-2xl border border-[var(--color-border)] bg-white shadow-inner md:block">
                 <table className="w-full border-collapse">
                   <thead className="bg-[var(--color-primary)] text-left text-xs font-semibold uppercase tracking-widest text-white">
                     <tr>
@@ -876,14 +958,14 @@ export default function DashboardPage() {
                   </thead>
                   <tbody className="text-sm text-[var(--color-primary)]">
                     {timeSlots.map((slot) => {
-                      const hour = slot.startHour;
+                      const hour = slot.startHour; // jam real
                       return (
                         <tr
                           key={`slot-${hour}`}
                           className="border-t border-[color:var(--color-border)]"
                         >
                           <td className="border-r border-[color:var(--color-border)] px-4 py-3 font-semibold align-top">
-                            {slotLabel(slot.startHour, slot.endHour)}
+                            {businessSlotLabel(slot.startHour, slot.endHour)}
                           </td>
                           {roomNames.map((room) => {
                             const startInfo = startsIndex[room]?.[hour];
@@ -970,7 +1052,7 @@ export default function DashboardPage() {
               {/* Mobile */}
               <div className="mt-6 space-y-4 md:hidden">
                 {timeSlots.map((slot) => {
-                  const hour = slot.startHour;
+                  const hour = slot.startHour; // jam real
                   return (
                     <section
                       key={`mobile-slot-${hour}`}
@@ -978,7 +1060,7 @@ export default function DashboardPage() {
                     >
                       <div className="mb-3 border-b border-[color:var(--color-border)] pb-2">
                         <h3 className="text-sm font-semibold text-[var(--color-primary)]">
-                          {slotLabel(slot.startHour, slot.endHour)}
+                          {businessSlotLabel(slot.startHour, slot.endHour)}
                         </h3>
                       </div>
                       <div className="space-y-3">
@@ -1077,202 +1159,222 @@ export default function DashboardPage() {
             </>
           )}
 
+          {/* ===== Local MODALS (tetap seperti sebelumnya, body sudah terkunci oleh hook) ===== */}
+
           {/* EDIT MODAL */}
           {editing ? (
-            <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-50">
+              {/* Backdrop full-viewport */}
               <div
                 className="absolute inset-0 bg-black/45 backdrop-blur-sm"
                 onClick={cancelEdit}
               />
-              <form
-                onSubmit={handleUpdate}
-                className="relative z-50 w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md md:px-8"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
-                      Edit sesi pelanggan
-                    </p>
-                    <h3 className="text-xl font-semibold text-[var(--color-primary)]">
-                      {editing.namaPelanggan}
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={cancelEdit}
-                    className="text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)] hover:text-[#a91020]"
-                  >
-                    Batal
-                  </button>
-                </div>
 
-                {editingError ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
-                    {editingError}
-                  </div>
-                ) : null}
-
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  <FieldRead
-                    label="Nama kasir"
-                    value={cashierDisplayName || "-"}
-                  />
-                  <EditField
-                    id="edit-namaPelanggan"
-                    label="Nama pelanggan"
-                    value={editing.namaPelanggan}
-                    onChange={(v) =>
-                      setEditing((prev) =>
-                        prev ? { ...prev, namaPelanggan: v } : prev
-                      )
-                    }
-                  />
-                  <EditField
-                    id="edit-noHp"
-                    label="No HP pelanggan"
-                    value={editing.noHp}
-                    onChange={(v) =>
-                      setEditing((prev) => (prev ? { ...prev, noHp: v } : prev))
-                    }
-                    placeholder="08xxxxxxxxxx"
-                  />
-                  <RoomSelectEdit
-                    value={editing.room}
-                    onChange={(room) =>
-                      setEditing((prev) => (prev ? { ...prev, room } : prev))
-                    }
-                    rooms={rooms}
-                  />
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                      Durasi (jam)
-                    </label>
-                    <select
-                      value={editing.qtyJam}
-                      onChange={(e) =>
-                        setEditing((prev) =>
-                          prev
-                            ? { ...prev, qtyJam: Number(e.target.value) }
-                            : prev
-                        )
-                      }
-                      className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+              {/* Wrapper center (jangan pakai overflow di wrapper) */}
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <form
+                  onSubmit={handleUpdate}
+                  role="dialog"
+                  aria-modal="true"
+                  className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md md:px-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)] mb-3">
+                        Edit sesi pelanggan
+                      </p>
+                      <h3 className="text-xl font-semibold text-[var(--color-primary)]">
+                        {editing.namaPelanggan}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)] hover:text-[#a91020]"
                     >
-                      {Array.from(
-                        { length: MAX_BOOKING_HOURS },
-                        (_, i) => i + 1
-                      ).map((h) => (
-                        <option key={h} value={h}>
-                          {h} jam
-                        </option>
-                      ))}
-                    </select>
+                      Batal
+                    </button>
                   </div>
 
-                  <div className="lg:col-span-2 flex flex-col gap-2">
-                    <label
-                      htmlFor="edit-catatan"
-                      className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
-                    >
-                      Catatan
-                    </label>
-                    <textarea
-                      id="edit-catatan"
-                      rows={2}
-                      value={editing.catatan}
-                      onChange={(e) =>
-                        setEditing((prev) =>
-                          prev ? { ...prev, catatan: e.target.value } : prev
-                        )
-                      }
-                      className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm text-[var(--color-primary)] outline-none"
+                  {editingError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                      {editingError}
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <FieldRead
+                      label="Nama kasir"
+                      value={cashierDisplayName || "-"}
                     />
-                  </div>
-                </div>
+                    <EditField
+                      id="edit-namaPelanggan"
+                      label="Nama pelanggan"
+                      value={editing.namaPelanggan}
+                      onChange={(v) =>
+                        setEditing((prev) =>
+                          prev ? { ...prev, namaPelanggan: v } : prev
+                        )
+                      }
+                    />
+                    <EditField
+                      id="edit-noHp"
+                      label="No HP pelanggan"
+                      value={editing.noHp}
+                      onChange={(v) =>
+                        setEditing((prev) =>
+                          prev ? { ...prev, noHp: v } : prev
+                        )
+                      }
+                      placeholder="08xxxxxxxxxx"
+                    />
+                    <RoomSelectEdit
+                      value={editing.room}
+                      onChange={(room) =>
+                        setEditing((prev) => (prev ? { ...prev, room } : prev))
+                      }
+                      rooms={rooms}
+                    />
 
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="submit"
-                    disabled={editingLoading}
-                    className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
-                  >
-                    {editingLoading ? "Memperbarui…" : "Simpan perubahan"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelEdit}
-                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)]"
-                  >
-                    Batal
-                  </button>
-                </div>
-              </form>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                        Durasi (jam)
+                      </label>
+                      <select
+                        value={editing.qtyJam}
+                        onChange={(e) =>
+                          setEditing((prev) =>
+                            prev
+                              ? { ...prev, qtyJam: Number(e.target.value) }
+                              : prev
+                          )
+                        }
+                        className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+                      >
+                        {Array.from(
+                          { length: MAX_BOOKING_HOURS },
+                          (_, i) => i + 1
+                        ).map((h) => (
+                          <option key={h} value={h}>
+                            {h} jam
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="lg:col-span-2 flex flex-col gap-2">
+                      <label
+                        htmlFor="edit-catatan"
+                        className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
+                      >
+                        Catatan
+                      </label>
+                      <textarea
+                        id="edit-catatan"
+                        rows={2}
+                        value={editing.catatan}
+                        onChange={(e) =>
+                          setEditing((prev) =>
+                            prev ? { ...prev, catatan: e.target.value } : prev
+                          )
+                        }
+                        className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm text-[var(--color-primary)] outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 mt-7">
+                    <button
+                      type="submit"
+                      disabled={editingLoading}
+                      className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                    >
+                      {editingLoading ? "Memperbarui…" : "Simpan perubahan"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)]"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           ) : null}
 
           {/* DELETE MODAL */}
           {deleteTarget ? (
-            <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-50">
+              {/* Backdrop */}
               <div
                 className="absolute inset-0 bg-black/45 backdrop-blur-sm"
                 onClick={() => (!deleteLoading ? setDeleteTarget(null) : null)}
               />
-              <div
-                className="relative z-50 w-full max-w-md space-y-4 rounded-2xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_18px_45px_rgba(12,29,74,0.18)] backdrop-blur-md"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold text-[var(--color-primary)]">
-                    Hapus sesi pelanggan?
-                  </h3>
-                  <p className="text-sm text-[color:var(--color-muted)]">
-                    Data pelanggan{" "}
-                    <span className="font-semibold text-[var(--color-primary)]">
-                      {deleteTarget.nama_pelanggan}
-                    </span>{" "}
-                    di ruangan{" "}
-                    <span className="font-semibold text-[var(--color-primary)]">
-                      {deleteTarget.room}
-                    </span>{" "}
-                    akan dihapus permanen.
-                  </p>
-                </div>
-                <dl className="rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-3 text-sm text-[color:var(--color-muted)]">
-                  <div className="flex justify-between">
-                    <dt>Waktu</dt>
-                    <dd className="font-semibold text-[var(--color-primary)]">
-                      {formatTimeOnly(deleteTarget.waktu_mulai)} -{" "}
-                      {formatTimeOnly(deleteTarget.waktu_selesai)}
-                    </dd>
+
+              {/* Center wrapper */}
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_18px_45px_rgba(12,29,74,0.18)] backdrop-blur-md"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold text-[var(--color-primary)]">
+                      Hapus sesi pelanggan?
+                    </h3>
+                    <p className="text-sm text-[color:var(--color-muted)]">
+                      Data pelanggan{" "}
+                      <span className="font-semibold text-[var(--color-primary)]">
+                        {deleteTarget.nama_pelanggan}
+                      </span>{" "}
+                      di ruangan{" "}
+                      <span className="font-semibold text-[var(--color-primary)]">
+                        {deleteTarget.room}
+                      </span>{" "}
+                      akan dihapus permanen.
+                    </p>
                   </div>
-                  <div className="mt-2 flex justify-between">
-                    <dt>Kasir</dt>
-                    <dd className="font-semibold text-[var(--color-primary)]">
-                      {deleteTarget.nama_kasir}
-                    </dd>
+
+                  <dl className="mt-3 rounded-xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                    <div className="flex justify-between">
+                      <dt>Waktu</dt>
+                      <dd className="font-semibold text-[var(--color-primary)]">
+                        {formatTimeOnly(deleteTarget.waktu_mulai)} -{" "}
+                        {formatTimeOnly(deleteTarget.waktu_selesai)}
+                      </dd>
+                    </div>
+                    <div className="mt-2 flex justify-between">
+                      <dt>Kasir</dt>
+                      <dd className="font-semibold text-[var(--color-primary)]">
+                        {deleteTarget.nama_kasir}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-4 flex flex-wrap justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        !deleteLoading ? setDeleteTarget(null) : null
+                      }
+                      className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
+                      disabled={deleteLoading}
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(deleteTarget.id)}
+                      className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                      disabled={deleteLoading}
+                    >
+                      {deleteLoading ? "Menghapus…" : "Hapus sesi"}
+                    </button>
                   </div>
-                </dl>
-                <div className="flex flex-wrap justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      !deleteLoading ? setDeleteTarget(null) : null
-                    }
-                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
-                    disabled={deleteLoading}
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(deleteTarget.id)}
-                    className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
-                    disabled={deleteLoading}
-                  >
-                    {deleteLoading ? "Menghapus…" : "Hapus sesi"}
-                  </button>
                 </div>
               </div>
             </div>
@@ -1280,108 +1382,123 @@ export default function DashboardPage() {
 
           {/* QUICK ADD MODAL */}
           {quickAdd ? (
-            <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-50">
+              {/* Backdrop */}
               <div
                 className="absolute inset-0 bg-black/45 backdrop-blur-sm"
                 onClick={() => (!quickAddLoading ? setQuickAdd(null) : null)}
               />
-              <form
-                onSubmit={handleQuickAdd}
-                className="relative z-50 w-full max-w-md space-y-4 rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="space-y-1">
-                  <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
-                    Tambah sesi cepat
-                  </p>
-                  <h3 className="text-lg font-semibold text-[var(--color-primary)]">
-                    {quickAdd.room} •{" "}
-                    {slotLabel(quickAdd.startHour, quickAdd.startHour + 1)}
-                  </h3>
-                  <p className="text-xs text-[color:var(--color-muted)]">
-                    {selectedDate.toLocaleDateString("id-ID", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}
-                  </p>
-                </div>
 
-                {quickAddError ? (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
-                    {quickAddError}
+              {/* Center wrapper */}
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <form
+                  onSubmit={handleQuickAdd}
+                  role="dialog"
+                  aria-modal="true"
+                  className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
+                      Tambah sesi cepat
+                    </p>
+                    <h3 className="text-lg font-semibold text-[var(--color-primary)]">
+                      {quickAdd.room} •{" "}
+                      {businessSlotLabel(
+                        quickAdd.startHour,
+                        (quickAdd.startHour + 1) % 24
+                      )}
+                    </h3>
+                    <p className="text-xs text-[color:var(--color-muted)]">
+                      {selectedDate.toLocaleDateString("id-ID", {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                      })}
+                    </p>
                   </div>
-                ) : null}
 
-                <div className="space-y-3">
-                  <FieldRead
-                    label="Nama kasir"
-                    value={cashierDisplayName || "-"}
-                  />
-                  <EditField
-                    id="qa-nama"
-                    label="Nama pelanggan"
-                    value={quickAddForm.namaPelanggan}
-                    onChange={(v) =>
-                      setQuickAddForm((prev) => ({ ...prev, namaPelanggan: v }))
-                    }
-                    placeholder="Contoh: Abi Saputra"
-                  />
-                  <EditField
-                    id="qa-hp"
-                    label="No HP pelanggan"
-                    value={quickAddForm.noHp}
-                    onChange={(v) =>
-                      setQuickAddForm((prev) => ({ ...prev, noHp: v }))
-                    }
-                    placeholder="08xxxxxxxxxx"
-                  />
+                  {quickAddError ? (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                      {quickAddError}
+                    </div>
+                  ) : null}
 
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                      Durasi (jam)
-                    </label>
-                    <select
-                      value={quickAddForm.qtyJam}
-                      onChange={(e) =>
+                  <div className="mt-3 space-y-3">
+                    <FieldRead
+                      label="Nama kasir"
+                      value={cashierDisplayName || "-"}
+                    />
+
+                    <EditField
+                      id="qa-nama"
+                      label="Nama pelanggan"
+                      value={quickAddForm.namaPelanggan}
+                      onChange={(v) =>
                         setQuickAddForm((prev) => ({
                           ...prev,
-                          qtyJam: Number(e.target.value),
+                          namaPelanggan: v,
                         }))
                       }
-                      className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
-                    >
-                      {Array.from(
-                        { length: MAX_BOOKING_HOURS },
-                        (_, i) => i + 1
-                      ).map((h) => (
-                        <option key={h} value={h}>
-                          {h} jam
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                      placeholder="Contoh: Abi Saputra"
+                    />
 
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="submit"
-                    disabled={quickAddLoading}
-                    className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
-                  >
-                    {quickAddLoading ? "Membuat…" : "Buat sesi"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      !quickAddLoading ? setQuickAdd(null) : null
-                    }
-                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
-                  >
-                    Batal
-                  </button>
-                </div>
-              </form>
+                    <EditField
+                      id="qa-hp"
+                      label="No HP pelanggan"
+                      value={quickAddForm.noHp}
+                      onChange={(v) =>
+                        setQuickAddForm((prev) => ({ ...prev, noHp: v }))
+                      }
+                      placeholder="08xxxxxxxxxx"
+                    />
+
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                        Durasi (jam)
+                      </label>
+                      <select
+                        value={quickAddForm.qtyJam}
+                        onChange={(e) =>
+                          setQuickAddForm((prev) => ({
+                            ...prev,
+                            qtyJam: Number(e.target.value),
+                          }))
+                        }
+                        className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+                      >
+                        {Array.from(
+                          { length: MAX_BOOKING_HOURS },
+                          (_, i) => i + 1
+                        ).map((h) => (
+                          <option key={h} value={h}>
+                            {h} jam
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      disabled={quickAddLoading}
+                      className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                    >
+                      {quickAddLoading ? "Membuat…" : "Buat sesi"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        !quickAddLoading ? setQuickAdd(null) : null
+                      }
+                      className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           ) : null}
         </section>
