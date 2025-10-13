@@ -233,12 +233,12 @@ export default function RoomsManager({ open, onClose, onSaved }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 overscroll-contain">
       <div
         className="absolute inset-0 bg-black/45 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative z-10 w-full max-w-4xl rounded-3xl border border-[color:var(--color-border)] bg-white/98 shadow-[0_24px_60px_rgba(12,29,74,0.18)] p-5 sm:p-7">
+      <div className="relative z-10 w-full max-w-4xl rounded-3xl border border-[color:var(--color-border)] bg-white/98 shadow-[0_24px_60px_rgba(12,29,74,0.18)] p-5 sm:p-7 max-h-[80vh] sm:max-h-[80vh] overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
@@ -382,7 +382,7 @@ export default function RoomsManager({ open, onClose, onSaved }) {
           <h4 className="mb-2 text-sm font-semibold text-[var(--color-primary)]">
             Daftar Rooms
           </h4>
-          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white overflow-hidden">
+          <div className="rounded-2xl border border-[color:var(--color-border)] bg-white overflow-hidden ">
             <table className="w-full text-sm">
               <thead className="bg-[var(--color-primary)] text-white text-xs uppercase tracking-widest">
                 <tr>
@@ -393,7 +393,7 @@ export default function RoomsManager({ open, onClose, onSaved }) {
                   <th className="px-3 py-2">Aksi</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y max-h-[40vh] overflow-auto">
                 {loading ? (
                   <tr>
                     <td

@@ -166,12 +166,10 @@ const BUSINESS_START_HOUR = 6; // 06:00 real
 const BUSINESS_END_HOUR = 4; // 04:00 real
 const buildBusinessTimeSlots = () => {
   const slots = [];
-  let h = BUSINESS_START_HOUR;
-  while (true) {
+  for (let i = 0; i < 24; i++) {
+    const h = (BUSINESS_START_HOUR + i) % 24;
     const next = (h + 1) % 24;
-    slots.push({ startHour: h, endHour: next }); // jam real
-    if (next === BUSINESS_END_HOUR) break;
-    h = next;
+    slots.push({ startHour: h, endHour: next });
   }
   return slots;
 };
@@ -394,6 +392,7 @@ export default function DashboardPage() {
 
   // Helpers detail room
   const findRoom = (name) => rooms.find((r) => r.name === name);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const getDetail = (name) => findRoom(name) || DEFAULT_DETAIL;
   const roomNames = useMemo(() => rooms.map((r) => r.name), [rooms]);
 
@@ -450,7 +449,7 @@ export default function DashboardPage() {
       { room: "ALL", count: totalCount, totalHours, detail: DEFAULT_DETAIL },
       ...byRoom,
     ];
-  }, [filteredByDate, roomNames]);
+  }, [filteredByDate, getDetail, roomNames]);
 
   // Actions
   const handleSignOut = async () => {
@@ -1159,347 +1158,340 @@ export default function DashboardPage() {
             </>
           )}
 
-          {/* ===== Local MODALS (tetap seperti sebelumnya, body sudah terkunci oleh hook) ===== */}
-
           {/* EDIT MODAL */}
           {editing ? (
-            <div className="fixed inset-0 z-50">
-              {/* Backdrop full-viewport */}
+            <ModalPortal>
+              <div className="fixed inset-0 z-[9998] pointer-events-none backdrop-blur-sm" />
               <div
-                className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                className="fixed inset-0 z-[9999] bg-black/45"
                 onClick={cancelEdit}
               />
-
-              {/* Wrapper center (jangan pakai overflow di wrapper) */}
-              <div className="absolute inset-0 flex items-center justify-center p-4">
-                <form
-                  onSubmit={handleUpdate}
-                  role="dialog"
-                  aria-modal="true"
-                  className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md md:px-8"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)] mb-3">
-                        Edit sesi pelanggan
-                      </p>
-                      <h3 className="text-xl font-semibold text-[var(--color-primary)]">
-                        {editing.namaPelanggan}
-                      </h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={cancelEdit}
-                      className="text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)] hover:text-[#a91020]"
-                    >
-                      Batal
-                    </button>
+              <form
+                onSubmit={handleUpdate}
+                role="dialog"
+                aria-modal="true"
+                className="fixed z-[10000] top-1/2 left-1/2 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2
+                 max-h-[85vh] overflow-y-auto rounded-3xl border border-[color:var(--color-border)]
+                 bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md md:px-8"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* === ISI FORM KAMU TETAP SAMA MULAI DARI SINI === */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-5">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
+                      Edit sesi pelanggan
+                    </p>
+                    <h3 className="text-xl font-semibold text-[var(--color-primary)]">
+                      {editing.namaPelanggan}
+                    </h3>
                   </div>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="text-xs font-semibold uppercase tracking-widest text-[var(--color-accent)] hover:text-[#a91020]"
+                  >
+                    Batal
+                  </button>
+                </div>
 
-                  {editingError ? (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
-                      {editingError}
-                    </div>
-                  ) : null}
+                {editingError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                    {editingError}
+                  </div>
+                ) : null}
 
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    <FieldRead
-                      label="Nama kasir"
-                      value={cashierDisplayName || "-"}
-                    />
-                    <EditField
-                      id="edit-namaPelanggan"
-                      label="Nama pelanggan"
-                      value={editing.namaPelanggan}
-                      onChange={(v) =>
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  <FieldRead
+                    label="Nama kasir"
+                    value={cashierDisplayName || "-"}
+                  />
+                  <EditField
+                    id="edit-namaPelanggan"
+                    label="Nama pelanggan"
+                    value={editing.namaPelanggan}
+                    onChange={(v) =>
+                      setEditing((prev) =>
+                        prev ? { ...prev, namaPelanggan: v } : prev
+                      )
+                    }
+                  />
+                  <EditField
+                    id="edit-noHp"
+                    label="No HP pelanggan"
+                    value={editing.noHp}
+                    onChange={(v) =>
+                      setEditing((prev) => (prev ? { ...prev, noHp: v } : prev))
+                    }
+                    placeholder="08xxxxxxxxxx"
+                  />
+                  <RoomSelectEdit
+                    value={editing.room}
+                    onChange={(room) =>
+                      setEditing((prev) => (prev ? { ...prev, room } : prev))
+                    }
+                    rooms={rooms}
+                  />
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      Durasi (jam)
+                    </label>
+                    <select
+                      value={editing.qtyJam}
+                      onChange={(e) =>
                         setEditing((prev) =>
-                          prev ? { ...prev, namaPelanggan: v } : prev
+                          prev
+                            ? { ...prev, qtyJam: Number(e.target.value) }
+                            : prev
                         )
                       }
-                    />
-                    <EditField
-                      id="edit-noHp"
-                      label="No HP pelanggan"
-                      value={editing.noHp}
-                      onChange={(v) =>
+                      className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
+                    >
+                      {Array.from(
+                        { length: MAX_BOOKING_HOURS },
+                        (_, i) => i + 1
+                      ).map((h) => (
+                        <option key={h} value={h}>
+                          {h} jam
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="lg:col-span-2 flex flex-col gap-2">
+                    <label
+                      htmlFor="edit-catatan"
+                      className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
+                    >
+                      Catatan
+                    </label>
+                    <textarea
+                      id="edit-catatan"
+                      rows={2}
+                      value={editing.catatan}
+                      onChange={(e) =>
                         setEditing((prev) =>
-                          prev ? { ...prev, noHp: v } : prev
+                          prev ? { ...prev, catatan: e.target.value } : prev
                         )
                       }
-                      placeholder="08xxxxxxxxxx"
+                      className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm text-[var(--color-primary)] outline-none"
                     />
-                    <RoomSelectEdit
-                      value={editing.room}
-                      onChange={(room) =>
-                        setEditing((prev) => (prev ? { ...prev, room } : prev))
-                      }
-                      rooms={rooms}
-                    />
-
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                        Durasi (jam)
-                      </label>
-                      <select
-                        value={editing.qtyJam}
-                        onChange={(e) =>
-                          setEditing((prev) =>
-                            prev
-                              ? { ...prev, qtyJam: Number(e.target.value) }
-                              : prev
-                          )
-                        }
-                        className="rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
-                      >
-                        {Array.from(
-                          { length: MAX_BOOKING_HOURS },
-                          (_, i) => i + 1
-                        ).map((h) => (
-                          <option key={h} value={h}>
-                            {h} jam
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="lg:col-span-2 flex flex-col gap-2">
-                      <label
-                        htmlFor="edit-catatan"
-                        className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]"
-                      >
-                        Catatan
-                      </label>
-                      <textarea
-                        id="edit-catatan"
-                        rows={2}
-                        value={editing.catatan}
-                        onChange={(e) =>
-                          setEditing((prev) =>
-                            prev ? { ...prev, catatan: e.target.value } : prev
-                          )
-                        }
-                        className="resize-none rounded-2xl border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm text-[var(--color-primary)] outline-none"
-                      />
-                    </div>
                   </div>
+                </div>
 
-                  <div className="flex flex-wrap gap-3 mt-7">
-                    <button
-                      type="submit"
-                      disabled={editingLoading}
-                      className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
-                    >
-                      {editingLoading ? "Memperbarui…" : "Simpan perubahan"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEdit}
-                      className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)]"
-                    >
-                      Batal
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
+                <div className="flex flex-wrap gap-3 mt-5">
+                  <button
+                    type="submit"
+                    disabled={editingLoading}
+                    className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                  >
+                    {editingLoading ? "Memperbarui…" : "Simpan perubahan"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)]"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
+            </ModalPortal>
           ) : null}
 
           {/* DELETE MODAL */}
           {deleteTarget ? (
-            <div className="fixed inset-0 z-50">
-              {/* Backdrop */}
+            <ModalPortal>
+              <div className="fixed inset-0 z-[9998] pointer-events-none backdrop-blur-sm" />
+
               <div
-                className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                className="fixed inset-0 z-[9999] bg-black/45"
                 onClick={() => (!deleteLoading ? setDeleteTarget(null) : null)}
               />
 
-              {/* Center wrapper */}
-              <div className="absolute inset-0 flex items-center justify-center p-4">
-                <div
-                  role="dialog"
-                  aria-modal="true"
-                  className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-[color:var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_18px_45px_rgba(12,29,74,0.18)] backdrop-blur-md"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-[var(--color-primary)]">
-                      Hapus sesi pelanggan?
-                    </h3>
-                    <p className="text-sm text-[color:var(--color-muted)]">
-                      Data pelanggan{" "}
-                      <span className="font-semibold text-[var(--color-primary)]">
-                        {deleteTarget.nama_pelanggan}
-                      </span>{" "}
-                      di ruangan{" "}
-                      <span className="font-semibold text-[var(--color-primary)]">
-                        {deleteTarget.room}
-                      </span>{" "}
-                      akan dihapus permanen.
-                    </p>
-                  </div>
+              <div
+                role="dialog"
+                aria-modal="true"
+                className="fixed z-[10000] top-1/2 left-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2
+                 max-h-[85vh] overflow-y-auto rounded-2xl border border-[color:var(--color-border)]
+                 bg-white/98 px-6 py-6 shadow-[0_18px_45px_rgba(12,29,74,0.18)] backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-[var(--color-primary)]">
+                    Hapus sesi pelanggan?
+                  </h3>
+                  <p className="text-sm text-[color:var(--color-muted)]">
+                    Data pelanggan{" "}
+                    <span className="font-semibold text-[var(--color-primary)]">
+                      {deleteTarget.nama_pelanggan}
+                    </span>{" "}
+                    di ruangan{" "}
+                    <span className="font-semibold text-[var(--color-primary)]">
+                      {deleteTarget.room}
+                    </span>{" "}
+                    akan dihapus permanen.
+                  </p>
+                </div>
 
-                  <dl className="mt-3 rounded-xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[color:var(--color-muted)]">
-                    <div className="flex justify-between">
-                      <dt>Waktu</dt>
-                      <dd className="font-semibold text-[var(--color-primary)]">
-                        {formatTimeOnly(deleteTarget.waktu_mulai)} -{" "}
-                        {formatTimeOnly(deleteTarget.waktu_selesai)}
-                      </dd>
-                    </div>
-                    <div className="mt-2 flex justify-between">
-                      <dt>Kasir</dt>
-                      <dd className="font-semibold text-[var(--color-primary)]">
-                        {deleteTarget.nama_kasir}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <div className="mt-4 flex flex-wrap justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        !deleteLoading ? setDeleteTarget(null) : null
-                      }
-                      className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
-                      disabled={deleteLoading}
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(deleteTarget.id)}
-                      className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
-                      disabled={deleteLoading}
-                    >
-                      {deleteLoading ? "Menghapus…" : "Hapus sesi"}
-                    </button>
+                <dl className="mt-3 rounded-xl border border-[var(--color-border)] bg-white px-4 py-3 text-sm text-[color:var(--color-muted)]">
+                  <div className="flex justify-between">
+                    <dt>Waktu</dt>
+                    <dd className="font-semibold text-[var(--color-primary)]">
+                      {formatTimeOnly(deleteTarget.waktu_mulai)} -{" "}
+                      {formatTimeOnly(deleteTarget.waktu_selesai)}
+                    </dd>
                   </div>
+                  <div className="mt-2 flex justify-between">
+                    <dt>Kasir</dt>
+                    <dd className="font-semibold text-[var(--color-primary)]">
+                      {deleteTarget.nama_kasir}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="mt-4 flex flex-wrap justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      !deleteLoading ? setDeleteTarget(null) : null
+                    }
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
+                    disabled={deleteLoading}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(deleteTarget.id)}
+                    className="inline-flex items-center justify-center rounded-full border border-transparent bg-[var(--color-accent)] px-5 py-2 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                    disabled={deleteLoading}
+                  >
+                    {deleteLoading ? "Menghapus…" : "Hapus sesi"}
+                  </button>
                 </div>
               </div>
-            </div>
+            </ModalPortal>
           ) : null}
 
           {/* QUICK ADD MODAL */}
           {quickAdd ? (
-            <div className="fixed inset-0 z-50">
-              {/* Backdrop */}
+            <ModalPortal>
+              <div className="fixed inset-0 z-[9998] pointer-events-none backdrop-blur-sm" />
               <div
-                className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                className="fixed inset-0 z-[9999] bg-black/45"
                 onClick={() => (!quickAddLoading ? setQuickAdd(null) : null)}
               />
+              <form
+                onSubmit={handleQuickAdd}
+                role="dialog"
+                aria-modal="true"
+                className="fixed z-[10000] top-1/2 left-1/2 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2
+                 max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--color-border)]
+                 bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
+                    Tambah sesi cepat
+                  </p>
+                  <h3 className="text-lg font-semibold text-[var(--color-primary)]">
+                    {quickAdd.room} •{" "}
+                    {businessSlotLabel(
+                      quickAdd.startHour,
+                      (quickAdd.startHour + 1) % 24
+                    )}
+                  </h3>
+                  <p className="text-xs text-[color:var(--color-muted)]">
+                    {selectedDate.toLocaleDateString("id-ID", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}
+                  </p>
+                </div>
 
-              {/* Center wrapper */}
-              <div className="absolute inset-0 flex items-center justify-center p-4">
-                <form
-                  onSubmit={handleQuickAdd}
-                  role="dialog"
-                  aria-modal="true"
-                  className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--color-border)] bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
-                      Tambah sesi cepat
-                    </p>
-                    <h3 className="text-lg font-semibold text-[var(--color-primary)]">
-                      {quickAdd.room} •{" "}
-                      {businessSlotLabel(
-                        quickAdd.startHour,
-                        (quickAdd.startHour + 1) % 24
-                      )}
-                    </h3>
-                    <p className="text-xs text-[color:var(--color-muted)]">
-                      {selectedDate.toLocaleDateString("id-ID", {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                      })}
-                    </p>
+                {quickAddError ? (
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                    {quickAddError}
                   </div>
+                ) : null}
 
-                  {quickAddError ? (
-                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
-                      {quickAddError}
-                    </div>
-                  ) : null}
+                <div className="mt-3 space-y-3">
+                  <FieldRead
+                    label="Nama kasir"
+                    value={cashierDisplayName || "-"}
+                  />
 
-                  <div className="mt-3 space-y-3">
-                    <FieldRead
-                      label="Nama kasir"
-                      value={cashierDisplayName || "-"}
-                    />
+                  <EditField
+                    id="qa-nama"
+                    label="Nama pelanggan"
+                    value={quickAddForm.namaPelanggan}
+                    onChange={(v) =>
+                      setQuickAddForm((prev) => ({
+                        ...prev,
+                        namaPelanggan: v,
+                      }))
+                    }
+                    placeholder="Contoh: Abi Saputra"
+                  />
 
-                    <EditField
-                      id="qa-nama"
-                      label="Nama pelanggan"
-                      value={quickAddForm.namaPelanggan}
-                      onChange={(v) =>
+                  <EditField
+                    id="qa-hp"
+                    label="No HP pelanggan"
+                    value={quickAddForm.noHp}
+                    onChange={(v) =>
+                      setQuickAddForm((prev) => ({ ...prev, noHp: v }))
+                    }
+                    placeholder="08xxxxxxxxxx"
+                  />
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      Durasi (jam)
+                    </label>
+                    <select
+                      value={quickAddForm.qtyJam}
+                      onChange={(e) =>
                         setQuickAddForm((prev) => ({
                           ...prev,
-                          namaPelanggan: v,
+                          qtyJam: Number(e.target.value),
                         }))
                       }
-                      placeholder="Contoh: Abi Saputra"
-                    />
-
-                    <EditField
-                      id="qa-hp"
-                      label="No HP pelanggan"
-                      value={quickAddForm.noHp}
-                      onChange={(v) =>
-                        setQuickAddForm((prev) => ({ ...prev, noHp: v }))
-                      }
-                      placeholder="08xxxxxxxxxx"
-                    />
-
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                        Durasi (jam)
-                      </label>
-                      <select
-                        value={quickAddForm.qtyJam}
-                        onChange={(e) =>
-                          setQuickAddForm((prev) => ({
-                            ...prev,
-                            qtyJam: Number(e.target.value),
-                          }))
-                        }
-                        className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
-                      >
-                        {Array.from(
-                          { length: MAX_BOOKING_HOURS },
-                          (_, i) => i + 1
-                        ).map((h) => (
-                          <option key={h} value={h}>
-                            {h} jam
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={quickAddLoading}
-                      className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                      className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-primary)] outline-none"
                     >
-                      {quickAddLoading ? "Membuat…" : "Buat sesi"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        !quickAddLoading ? setQuickAdd(null) : null
-                      }
-                      className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
-                    >
-                      Batal
-                    </button>
+                      {Array.from(
+                        { length: MAX_BOOKING_HOURS },
+                        (_, i) => i + 1
+                      ).map((h) => (
+                        <option key={h} value={h}>
+                          {h} jam
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </form>
-              </div>
-            </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="submit"
+                    disabled={quickAddLoading}
+                    className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-white disabled:opacity-60"
+                  >
+                    {quickAddLoading ? "Membuat…" : "Buat sesi"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      !quickAddLoading ? setQuickAdd(null) : null
+                    }
+                    className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] px-5 py-2.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-60"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </form>
+            </ModalPortal>
           ) : null}
         </section>
       </main>
