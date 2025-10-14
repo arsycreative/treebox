@@ -1395,6 +1395,7 @@ export default function DashboardPage() {
                  max-h-[85vh] overflow-y-auto rounded-3xl border border-[var(--color-border)]
                  bg-white/98 px-6 py-6 shadow-[0_24px_60px_rgba(12,29,74,0.18)] backdrop-blur-md"
                 onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="space-y-1">
                   <p className="text-xs uppercase tracking-widest text-[color:var(--color-muted)]">
