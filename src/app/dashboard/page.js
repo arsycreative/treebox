@@ -145,11 +145,33 @@ const toDateKey = (iso) => {
 };
 const toInputDateString = (date) =>
   `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-const formatTimeOnly = (iso) =>
-  new Date(iso).toLocaleTimeString("id-ID", {
-    hour: "2-digit",
-    minute: "2-digit",
+const formatterWith = (options) =>
+  new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    hour12: false,
+    ...options,
   });
+
+const timeFormatter = formatterWith({ hour: "2-digit", minute: "2-digit" });
+const dateTimeFormatter = formatterWith({
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const normalizeDateInput = (value) => {
+  if (value instanceof Date) return new Date(value.getTime());
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatTimeOnly = (value) => {
+  const date = normalizeDateInput(value);
+  if (!date) return "--:--";
+  return timeFormatter.format(date);
+};
 const resolveQtyFromBooking = (b) => {
   const n = Number(b.qty_jam);
   if (Number.isFinite(n) && n > 0) return n;
@@ -180,10 +202,8 @@ const buildBusinessTimeSlots = () => {
   return slots;
 };
 const businessSlotLabel = (startHour, endHour) => {
-  const shift = (hour) => (hour - BUSINESS_START_HOUR + 24) % 24;
-  const sh = shift(startHour);
-  const eh = shift(endHour);
-  return `${pad(sh)}:00 - ${pad(eh)}:00`;
+  const formatHour = (hour) => `${pad(hour)}:00`;
+  return `${formatHour(startHour)} - ${formatHour(endHour)}`;
 };
 
 /* ====== PAGE ====== */
@@ -265,13 +285,7 @@ export default function DashboardPage() {
     const bizHour = shiftHour(real.getHours());
     const out = new Date(bizDate);
     out.setHours(bizHour, real.getMinutes(), 0, 0);
-    return out.toLocaleString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return dateTimeFormatter.format(out);
   };
 
   // Lock page scroll whenever ANY modal is open (local modals + external modals)
@@ -397,17 +411,92 @@ export default function DashboardPage() {
   const getDetail = (name) => findRoom(name) || DEFAULT_DETAIL;
   const roomNames = useMemo(() => rooms.map((r) => r.name), [rooms]);
 
-  const filteredByDate = useMemo(
-    () => bookings.filter((b) => toDateKey(b.waktu_mulai) === selectedDateKey),
-    [bookings, selectedDateKey]
-  );
-
   // Time slots (06:00 real → 04:00 real) with shifted labels
   const timeSlots = useMemo(() => buildBusinessTimeSlots(), []);
 
-  // Rowspan helpers
-  const getStartHour = (b) => new Date(b.waktu_mulai).getHours();
-  const getSpanHours = (b) => resolveQtyFromBooking(b);
+  const selectedDayBase = useMemo(() => {
+    const base = new Date(selectedDate);
+    base.setHours(0, 0, 0, 0);
+    return base;
+  }, [selectedDate]);
+
+  const selectedBusinessStart = useMemo(() => {
+    const start = new Date(selectedDayBase);
+    start.setHours(BUSINESS_START_HOUR, 0, 0, 0);
+    return start;
+  }, [selectedDayBase]);
+
+  const selectedBusinessEnd = useMemo(
+    () => new Date(selectedBusinessStart.getTime() + 24 * HOURS_IN_MS),
+    [selectedBusinessStart]
+  );
+
+  const slotMeta = useMemo(
+    () =>
+      timeSlots.map((slot) => {
+        const start = new Date(selectedDayBase);
+        start.setHours(slot.startHour, 0, 0, 0);
+        if (slot.startHour < BUSINESS_START_HOUR) {
+          start.setDate(start.getDate() + 1);
+        }
+        const end = new Date(start);
+        end.setHours(end.getHours() + 1);
+        return { ...slot, start, end };
+      }),
+    [selectedDayBase, timeSlots]
+  );
+
+  const dayEntries = useMemo(() => {
+    if (!roomNames.length) return [];
+
+    return bookings.reduce((acc, booking) => {
+      if (!roomNames.includes(booking.room)) return acc;
+
+      const bookingStart = new Date(booking.waktu_mulai);
+      const bookingEnd = new Date(booking.waktu_selesai);
+      if (
+        Number.isNaN(bookingStart.getTime()) ||
+        Number.isNaN(bookingEnd.getTime())
+      ) {
+        return acc;
+      }
+
+      if (
+        bookingStart >= selectedBusinessEnd ||
+        bookingEnd <= selectedBusinessStart
+      ) {
+        return acc;
+      }
+
+      const overlappedSlots = slotMeta.filter(
+        (slot) => slot.start < bookingEnd && slot.end > bookingStart
+      );
+      if (!overlappedSlots.length) return acc;
+
+      const firstSlot = overlappedSlots[0];
+      const lastSlot = overlappedSlots[overlappedSlots.length - 1];
+
+      acc.push({
+        booking,
+        slots: overlappedSlots.map((slot) => slot.startHour),
+        startHour: firstSlot.startHour,
+        span: overlappedSlots.length,
+        visibleHours: overlappedSlots.length,
+        displayStart: firstSlot.start,
+        displayEnd: lastSlot.end,
+        truncatedStart: bookingStart < selectedBusinessStart,
+        truncatedEnd: bookingEnd > selectedBusinessEnd,
+      });
+
+      return acc;
+    }, []);
+  }, [
+    bookings,
+    roomNames,
+    selectedBusinessEnd,
+    selectedBusinessStart,
+    slotMeta,
+  ]);
 
   const { startsIndex, occupiedIndex } = useMemo(() => {
     const starts = {};
@@ -417,24 +506,47 @@ export default function DashboardPage() {
       occ[room] = {};
     });
 
-    filteredByDate.forEach((b) => {
-      const room = b.room;
-      if (!roomNames.includes(room)) return;
-      const startH = getStartHour(b);
-      const span = Math.max(1, Math.min(24, getSpanHours(b)));
-      starts[room][startH] = { booking: b, span };
-      for (let h = 0; h < span; h++) occ[room][(startH + h) % 24] = true;
-    });
+    dayEntries.forEach(
+      ({
+        booking,
+        slots,
+        startHour,
+        span,
+        visibleHours,
+        displayStart,
+        displayEnd,
+        truncatedStart,
+        truncatedEnd,
+      }) => {
+        if (!roomNames.includes(booking.room)) return;
+
+        starts[booking.room][startHour] = {
+          booking,
+          span,
+          visibleHours,
+          displayStart,
+          displayEnd,
+          truncatedStart,
+          truncatedEnd,
+        };
+
+        slots.forEach((hour) => {
+          occ[booking.room][hour] = true;
+        });
+      }
+    );
 
     return { startsIndex: starts, occupiedIndex: occ };
-  }, [filteredByDate, roomNames]);
+  }, [dayEntries, roomNames]);
 
   // Ringkasan
   const summaryCards = useMemo(() => {
     const byRoom = roomNames.map((room) => {
-      const sessions = filteredByDate.filter((b) => b.room === room);
+      const sessions = dayEntries.filter(
+        (entry) => entry.booking.room === room
+      );
       const totalHours = sessions.reduce(
-        (sum, b) => sum + resolveQtyFromBooking(b),
+        (sum, entry) => sum + entry.visibleHours,
         0
       );
       return {
@@ -444,13 +556,20 @@ export default function DashboardPage() {
         detail: getDetail(room),
       };
     });
-    const totalCount = filteredByDate.length;
+    const totalCount = dayEntries.length;
     const totalHours = byRoom.reduce((s, i) => s + i.totalHours, 0);
     return [
       { room: "ALL", count: totalCount, totalHours, detail: DEFAULT_DETAIL },
       ...byRoom,
     ];
-  }, [filteredByDate, getDetail, roomNames]);
+  }, [dayEntries, getDetail, roomNames]);
+
+  const quickAddSlot = useMemo(() => {
+    if (!quickAdd) return null;
+    return (
+      slotMeta.find((slot) => slot.startHour === quickAdd.startHour) || null
+    );
+  }, [quickAdd, slotMeta]);
 
   // Actions
   const handleSignOut = async () => {
@@ -510,15 +629,32 @@ export default function DashboardPage() {
       const end = new Date(start);
       end.setHours(start.getHours() + qty);
 
-      // Cek tabrakan
-      const { data: konflik, error: conflictError } = await supabase
-        .from("rental_sesi")
-        .select("id")
-        .eq("room", editing.room)
-        .lt("waktu_mulai", end.toISOString())
-        .gt("waktu_selesai", start.toISOString());
-      if (conflictError) throw conflictError;
-      if ((konflik || []).some((k) => k.id !== editing.id)) {
+      const businessWindowStart = new Date(start);
+      if (businessWindowStart.getHours() < BUSINESS_START_HOUR) {
+        businessWindowStart.setDate(businessWindowStart.getDate() - 1);
+      }
+      businessWindowStart.setHours(BUSINESS_START_HOUR, 0, 0, 0);
+      const businessWindowEnd = new Date(
+        businessWindowStart.getTime() + 24 * HOURS_IN_MS
+      );
+
+      if (end > businessWindowEnd) {
+        setEditingError(
+          "Durasi melewati batas jam operasional. Kurangi durasi atau ubah ke hari berikutnya."
+        );
+        setEditingLoading(false);
+        return;
+      }
+
+      // Cek tabrakan (local cache terlebih dahulu)
+      const conflictExists = bookings.some((b) => {
+        if (b.id === editing.id) return false;
+        if (b.room !== editing.room) return false;
+        const existingStart = new Date(b.waktu_mulai);
+        const existingEnd = new Date(b.waktu_selesai);
+        return existingStart < end && existingEnd > start;
+      });
+      if (conflictExists) {
         setEditingError("Rentang waktu bertabrakan. Ubah durasi/ruangan.");
         setEditingLoading(false);
         return;
@@ -538,7 +674,14 @@ export default function DashboardPage() {
         .from("rental_sesi")
         .update(payload)
         .eq("id", editing.id);
-      if (error) throw error;
+      if (error) {
+        if (error.code === "23505" || error.code === "23P01") {
+          setEditingError("Rentang waktu bertabrakan. Ubah durasi/ruangan.");
+          setEditingLoading(false);
+          return;
+        }
+        throw error;
+      }
 
       toast.success("Perubahan berhasil disimpan.");
       setEditing(null);
@@ -591,25 +734,73 @@ export default function DashboardPage() {
         return;
       }
 
-      const startDate = new Date(selectedDate);
-      // startHour di slot tetap jam real
-      startDate.setHours(quickAdd.startHour, 0, 0, 0);
-      const qty = Math.min(
-        Math.max(quickAddForm.qtyJam || 1, 1),
-        MAX_BOOKING_HOURS
-      );
-      const latestEndHour = Math.min(24, quickAdd.startHour + qty);
-      const endDate = new Date(startDate);
-      endDate.setHours(latestEndHour, 0, 0, 0);
+      const normalizedSelected = new Date(selectedDate);
+      if (Number.isNaN(normalizedSelected.getTime())) {
+        setQuickAddError("Tanggal tidak valid.");
+        setQuickAddLoading(false);
+        return;
+      }
+      normalizedSelected.setHours(quickAdd.startHour, 0, 0, 0);
+      if (quickAdd.startHour < BUSINESS_START_HOUR) {
+        normalizedSelected.setDate(normalizedSelected.getDate() + 1);
+      }
 
-      const { data: konflik, error: conflictError } = await supabase
-        .from("rental_sesi")
-        .select("id")
-        .eq("room", quickAdd.room)
-        .lt("waktu_mulai", endDate.toISOString())
-        .gt("waktu_selesai", startDate.toISOString());
-      if (conflictError) throw conflictError;
-      if (konflik?.length) {
+      const slotInfo =
+        slotMeta.find((slot) => slot.startHour === quickAdd.startHour) || null;
+
+      const startDate = slotInfo
+        ? new Date(slotInfo.start)
+        : new Date(normalizedSelected);
+      const qtyInput = Number(quickAddForm.qtyJam) || 1;
+      const qty = Math.min(Math.max(qtyInput, 1), MAX_BOOKING_HOURS);
+
+      const businessBoundary = selectedBusinessEnd;
+      if (startDate >= businessBoundary) {
+        setQuickAddError(
+          "Jam ini berada di luar batas jam operasional (04:00)."
+        );
+        setQuickAddLoading(false);
+        return;
+      }
+      const remainingHours = Math.max(
+        0,
+        Math.floor(
+          (businessBoundary.getTime() - startDate.getTime()) / HOURS_IN_MS
+        )
+      );
+      if (remainingHours <= 0) {
+        setQuickAddError(
+          "Jam ini berada di luar batas jam operasional (04:00)."
+        );
+        setQuickAddLoading(false);
+        return;
+      }
+      if (qty > remainingHours) {
+        setQuickAddError(
+          `Durasi melewati batas jam operasional (${remainingHours} jam tersisa, tutup 04:00). Kurangi durasi atau pilih hari berikutnya.`
+        );
+        setQuickAddLoading(false);
+        return;
+      }
+      const endDate = new Date(startDate);
+      endDate.setHours(endDate.getHours() + qty);
+
+      // Cek tabrakan terhadap semua booking yang sudah kita cache.
+      const conflictExists = bookings.some((b) => {
+        if (b.room !== quickAdd.room) return false;
+        const existingStart = new Date(b.waktu_mulai);
+        const existingEnd = new Date(b.waktu_selesai);
+
+        if (
+          Number.isNaN(existingStart.getTime()) ||
+          Number.isNaN(existingEnd.getTime())
+        ) {
+          return false;
+        }
+        return existingStart < endDate && existingEnd > startDate;
+      });
+
+      if (conflictExists) {
         setQuickAddError(
           "Jadwal terpakai. Pilih jam lain atau kurangi durasi."
         );
@@ -622,13 +813,23 @@ export default function DashboardPage() {
         nama_pelanggan: quickAddForm.namaPelanggan.trim(),
         no_hp: quickAddForm.noHp.trim() || null,
         room: quickAdd.room,
-        qty_jam: latestEndHour - quickAdd.startHour,
+        qty_jam: qty,
         catatan: null,
         waktu_mulai: startDate.toISOString(),
         waktu_selesai: endDate.toISOString(),
       };
+
       const { error } = await supabase.from("rental_sesi").insert(payload);
-      if (error) throw error;
+      if (error) {
+        if (error.code === "23505" || error.code === "23P01") {
+          setQuickAddError(
+            "Jadwal terpakai. Pilih jam lain atau kurangi durasi."
+          );
+          setQuickAddLoading(false);
+          return;
+        }
+        throw error;
+      }
 
       toast.success("Sesi berhasil dibuat!");
       setQuickAdd(null);
@@ -640,7 +841,7 @@ export default function DashboardPage() {
       });
       fetchBookings();
     } catch (err) {
-      setQuickAddError(err.message);
+      setQuickAddError(err.message || "Terjadi kesalahan.");
     } finally {
       setQuickAddLoading(false);
     }
@@ -662,32 +863,34 @@ export default function DashboardPage() {
         // "Waktu Selesai (Kalender)",
         "Catatan",
       ],
-      ...filteredByDate.map((b, i) => {
-        const fReal = (iso) =>
-          new Date(iso).toLocaleString("id-ID", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
+      ...dayEntries.map(
+        ({ booking: b, visibleHours, displayStart, displayEnd }, i) => {
+          const fReal = (iso) =>
+            new Date(iso).toLocaleString("id-ID", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
 
-        return [
-          i + 1,
-          b.room,
-          b.nama_pelanggan,
-          b.nama_kasir,
-          b.no_hp ?? "",
-          resolveQtyFromBooking(b),
-          // Bisnis (mengikuti label 00:00-04:00 setelah geser dari jam real)
-          formatBusinessDateTime(b.waktu_mulai),
-          formatBusinessDateTime(b.waktu_selesai),
-          // Kalender (jam real di DB)
-          // fReal(b.waktu_mulai),
-          // fReal(b.waktu_selesai),
-          b.catatan ?? "",
-        ];
-      }),
+          return [
+            i + 1,
+            b.room,
+            b.nama_pelanggan,
+            b.nama_kasir,
+            b.no_hp ?? "",
+            visibleHours,
+            // Bisnis (mengikuti label 00:00-04:00 setelah geser dari jam real)
+            formatBusinessDateTime(displayStart.toISOString()),
+            formatBusinessDateTime(displayEnd.toISOString()),
+            // Kalender (jam real di DB)
+            // fReal(displayStart.toISOString()),
+            // fReal(displayEnd.toISOString()),
+            b.catatan ?? "",
+          ];
+        }
+      ),
     ];
 
     const csv = rows
@@ -996,11 +1199,23 @@ export default function DashboardPage() {
                                       </p>
                                       <p className="text-[10px] uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
                                         {b.nama_kasir} •{" "}
-                                        {resolveQtyFromBooking(b)} jam
+                                        {startInfo.visibleHours.toLocaleString(
+                                          "id-ID"
+                                        )}{" "}
+                                        jam
+                                        {startInfo.truncatedStart ||
+                                        startInfo.truncatedEnd
+                                          ? " (lanjutan)"
+                                          : ""}
                                       </p>
                                       <p className="text-[10px] text-[color:var(--color-muted)]">
-                                        {formatTimeOnly(b.waktu_mulai)} -{" "}
-                                        {formatTimeOnly(b.waktu_selesai)}
+                                        {formatTimeOnly(
+                                          startInfo.displayStart.toISOString()
+                                        )}{" "}
+                                        -{" "}
+                                        {formatTimeOnly(
+                                          startInfo.displayEnd.toISOString()
+                                        )}
                                       </p>
                                     </div>
                                     <div className="flex gap-1 shrink-0">
@@ -1100,15 +1315,22 @@ export default function DashboardPage() {
                                   </p>
                                   <p className="text-[10px] uppercase tracking-[0.3em] text-[color:var(--color-muted)]">
                                     {startInfo.booking.nama_kasir} •{" "}
-                                    {startInfo.span} jam
+                                    {startInfo.visibleHours.toLocaleString(
+                                      "id-ID"
+                                    )}{" "}
+                                    jam
+                                    {startInfo.truncatedStart ||
+                                    startInfo.truncatedEnd
+                                      ? " (lanjutan)"
+                                      : ""}
                                   </p>
                                   <p className="text-[10px] text-[color:var(--color-muted)]">
                                     {formatTimeOnly(
-                                      startInfo.booking.waktu_mulai
+                                      startInfo.displayStart.toISOString()
                                     )}{" "}
                                     -{" "}
                                     {formatTimeOnly(
-                                      startInfo.booking.waktu_selesai
+                                      startInfo.displayEnd.toISOString()
                                     )}
                                   </p>
                                   <div className="mt-2 flex justify-end gap-2">
@@ -1415,6 +1637,13 @@ export default function DashboardPage() {
                       month: "long",
                     })}
                   </p>
+                  {quickAddSlot ? (
+                    <p className="text-[10px] text-[color:var(--color-muted)]">
+                      Waktu real:{" "}
+                      {formatTimeOnly(quickAddSlot.start.toISOString())} -{" "}
+                      {formatTimeOnly(quickAddSlot.end.toISOString())}
+                    </p>
+                  ) : null}
                 </div>
 
                 {quickAddError ? (
