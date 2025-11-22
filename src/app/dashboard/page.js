@@ -250,6 +250,16 @@ export default function DashboardPage() {
   const selectedDate = visibleDates[selectedDateIndex];
   const selectedDateKey = toInputDateString(selectedDate);
 
+  // Hydration can use the server timezone; sync to the client clock once we're mounted.
+  useEffect(() => {
+    const localToday = startOfDay();
+    setDateWindowStart((prev) => {
+      if (prev.getTime() === localToday.getTime()) return prev;
+      setSelectedDateIndex(0);
+      return localToday;
+    });
+  }, []);
+
   // User & profile
   const [me, setMe] = useState({
     role: "crew",
@@ -327,11 +337,22 @@ export default function DashboardPage() {
   }, [supabase]);
 
   // Fetch bookings (ambil semua; filter di memori)
+  const computeWindowBounds = useCallback(() => {
+    const start = new Date(dateWindowStart);
+    start.setHours(BUSINESS_START_HOUR, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + WINDOW_SIZE + 1); // +1 to cover slot hingga 04:00 hari berikutnya
+    return { start, end };
+  }, [dateWindowStart]);
+
   const fetchBookings = useCallback(async () => {
     setBookingsLoading(true);
+    const { start, end } = computeWindowBounds();
     const { data, error } = await supabase
       .from("rental_sesi")
       .select("*")
+      .gt("waktu_selesai", start.toISOString())
+      .lt("waktu_mulai", end.toISOString())
       .order("waktu_mulai", { ascending: true });
     if (error) {
       toast.error(error.message);
@@ -340,7 +361,7 @@ export default function DashboardPage() {
       setBookings(data ?? []);
     }
     setBookingsLoading(false);
-  }, [supabase]);
+  }, [computeWindowBounds, supabase]);
 
   // Init sekali
   useEffect(() => {
@@ -404,6 +425,12 @@ export default function DashboardPage() {
       listener.subscription.unsubscribe();
     };
   }, [fetchBookings, fetchRooms, router, supabase]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    if (!didInitFetch.current) return;
+    fetchBookings();
+  }, [dateWindowStart, fetchBookings, sessionReady]);
 
   // Helpers detail room
   const findRoom = (name) => rooms.find((r) => r.name === name);
